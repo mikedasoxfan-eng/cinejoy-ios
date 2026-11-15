@@ -12,6 +12,10 @@ final class CinejoyUITests: XCTestCase {
         app.tabBars.buttons["Browse"].tap()
         XCTAssertTrue(app.navigationBars["Browse"].waitForExistence(timeout: 5))
         capture("02-browse", app)
+        app.segmentedControls.buttons["TV Shows"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'title-tv:'")).firstMatch.waitForExistence(timeout: 5))
+        capture("02b-browse-tv", app)
+        app.segmentedControls.buttons["Movies"].tap()
         let poster = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'title-'")).firstMatch
         XCTAssertTrue(poster.waitForExistence(timeout: 5))
         poster.tap()
@@ -56,10 +60,10 @@ final class CinejoyUITests: XCTestCase {
         app.tabBars.buttons["Search"].tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap(); field.typeText("Inception")
-        XCTAssertTrue(app.buttons["title-movie:27205"].waitForExistence(timeout: 30))
+        field.tap(); field.typeText("Arrival")
+        XCTAssertTrue(app.buttons["title-movie:329865"].waitForExistence(timeout: 30), "A title absent from the bundled catalog must arrive from live search")
         capture("07-live-search", app)
-        field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 9) + "zzzzcinejoynomatch999")
+        field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + "zzzzcinejoynomatch999")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'No Results'")).firstMatch.waitForExistence(timeout: 30))
         capture("08-search-empty", app)
     }
@@ -96,17 +100,10 @@ final class CinejoyUITests: XCTestCase {
         capture("13-settings-dark", app)
         theme.tap(); app.buttons["Light"].tap()
         capture("14-settings-light", app)
-        let clear = app.buttons["clear-history"]
-        if clear.isEnabled {
-            clear.tap()
-            let confirm = app.buttons["Clear history"]
-            XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
-        }
         app.buttons["Done"].tap()
         app.tabBars.buttons["Library"].tap()
         app.segmentedControls.buttons["History"].tap()
-        XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
-        capture("15-history-empty", app)
+        capture("15-history-overview", app)
     }
 
     @MainActor func testPlaybackHistoryAndNoCasting() throws {
@@ -122,17 +119,48 @@ final class CinejoyUITests: XCTestCase {
         let play = app.buttons["Play"].firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 5)); play.tap()
         XCTAssertTrue(app.buttons["Close player"].waitForExistence(timeout: 8))
-        let pause = app.webViews.buttons["Pause"].firstMatch
-        let playing = pause.waitForExistence(timeout: 45)
+        defer { if app.buttons["Close player"].exists { app.buttons["Close player"].tap() } }
+        let status = app.staticTexts["player-status"]
+        let advancing = NSPredicate(format: "value MATCHES %@", "Playing, ([3-9]|[1-9][0-9]+) seconds elapsed")
+        let playing = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 60) == .completed
         capture("11-player", app)
-        XCTAssertTrue(playing, "The real Cinejoy player reaches active playback")
+        XCTAssertTrue(playing, "The real video clock advances for at least three seconds")
+        let initialValue = status.value as? String ?? ""
+        let progresses = NSPredicate(format: "value BEGINSWITH %@ AND value != %@", "Playing, ", initialValue)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progresses, object: status)], timeout: 10), .completed, "Playback continues advancing after the initial report")
         XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
         sleep(8)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        capture("11b-player-landscape", app)
+        XCUIDevice.shared.orientation = .portrait
+        let savedSeconds = elapsed(status)
         app.buttons["Close player"].tap()
         app.tabBars.buttons["Library"].tap()
         app.segmentedControls.buttons["History"].tap()
         XCTAssertTrue(app.buttons.containing(.staticText, identifier: "Inception").firstMatch.waitForExistence(timeout: 10))
         capture("12-watch-history", app)
+        app.buttons.containing(.staticText, identifier: "Inception").firstMatch.tap()
+        XCTAssertTrue(app.buttons["Close player"].waitForExistence(timeout: 8))
+        let resumedStatus = app.staticTexts["player-status"]
+        let resumed = NSPredicate(format: "value BEGINSWITH %@", "Playing, ")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: resumed, object: resumedStatus)], timeout: 60), .completed)
+        XCTAssertGreaterThanOrEqual(elapsed(resumedStatus), savedSeconds - 2, "The first playing report resumes the saved position instead of restarting at zero")
+        capture("12b-resumed-player", app)
+        app.buttons["Close player"].tap()
+        app.buttons["Settings"].firstMatch.tap()
+        let clear = app.buttons["clear-history"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5)); XCTAssertTrue(clear.isEnabled)
+        clear.tap()
+        let confirm = app.buttons["Clear history"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
+        capture("12c-cleared-history", app)
+    }
+
+    @MainActor private func elapsed(_ element: XCUIElement) -> Int {
+        let value = element.value as? String ?? ""
+        return Int(value.replacingOccurrences(of: "Playing, ", with: "").replacingOccurrences(of: " seconds elapsed", with: "")) ?? -1
     }
 
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {

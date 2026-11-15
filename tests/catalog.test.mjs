@@ -63,3 +63,27 @@ test('season selection matches the actual menu label without its episode-count s
   vm.runInNewContext(script, { document });
   assert.equal(selected, true);
 });
+
+test('phone season selection uses the nearest repeated row in the mobile wheel', () => {
+  const { document } = parseHTML('<html><body><h2><button aria-expanded="true">Season 1</button></h2><div role="dialog"><div class="wheel"><button class="row" id="far"><span class="label">Season 2</span></button><button class="row" aria-current="true" id="current"><span class="label">Season 1</span></button><button class="row" id="near"><span class="label">Season 2</span></button></div></div></body></html>');
+  for (const [id, top] of [['far', 54], ['current', 32589], ['near', 32643]]) {
+    Object.defineProperty(document.getElementById(id), 'offsetTop', { value: top });
+  }
+  let selected;
+  for (const row of document.querySelectorAll('.row')) row.addEventListener('click', () => { selected = row.id; });
+  const script = readFileSync(new URL('../Resources/SeasonSelection.js', import.meta.url), 'utf8').replace('__SEASON__', '2');
+  vm.runInNewContext(script, { document });
+  assert.equal(selected, 'near');
+});
+
+test('season selection dismisses the announcement through its own control first', () => {
+  const { document } = parseHTML('<html><body><h2><button aria-expanded="false">Season 1</button></h2><div role="dialog"><h3>Good news!</h3><button aria-label="Close">Close</button></div></body></html>');
+  let dismissed = false;
+  let opened = false;
+  document.querySelector('[aria-label="Close"]').addEventListener('click', () => { dismissed = true; });
+  document.querySelector('h2 button').addEventListener('click', () => { opened = true; });
+  const script = readFileSync(new URL('../Resources/SeasonSelection.js', import.meta.url), 'utf8').replace('__SEASON__', '2');
+  vm.runInNewContext(script, { document });
+  assert.equal(dismissed, true);
+  assert.equal(opened, false);
+});

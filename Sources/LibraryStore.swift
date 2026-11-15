@@ -36,6 +36,7 @@ import Observation
 
     func record(_ title: Title, path: String, seconds: Double, duration: Double) {
         guard seconds.isFinite, duration.isFinite, seconds >= 0, duration > 0 else { return }
+        guard seconds >= 1 || history.contains(where: { $0.id == title.id }) else { return }
         history.removeAll { $0.id == title.id }
         history.insert(WatchEntry(title: title, path: path, seconds: seconds, duration: duration, updated: .now), at: 0)
         if history.count > 100 { history = Array(history.prefix(100)) }

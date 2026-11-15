@@ -9,12 +9,16 @@ struct PlayerScreen: View {
     @State private var isLoading = true
     @State private var error: String?
     @State private var attempt = 0
+    @State private var seconds = 0.0
+    @State private var isPaused = true
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error) { path, seconds, duration in
-                library.record(playback.title, path: path, seconds: seconds, duration: duration)
+            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error) { path, elapsed, duration, paused in
+                seconds = elapsed
+                isPaused = paused
+                library.record(playback.title, path: path, seconds: elapsed, duration: duration)
             }
             .id(attempt).ignoresSafeArea(edges: .bottom)
             if isLoading && error == nil {
@@ -41,6 +45,8 @@ struct PlayerScreen: View {
                 Spacer()
                 Text(playback.title.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     .padding(.horizontal, 16).padding(.vertical, 12).glassEffect()
+                    .accessibilityIdentifier("player-status")
+                    .accessibilityValue("\(isPaused ? "Paused" : "Playing"), \(Int(seconds)) seconds elapsed")
                 Spacer()
                 Button(library.contains(playback.title) ? "Remove from Library" : "Save to Library",
                        systemImage: library.contains(playback.title) ? "bookmark.fill" : "bookmark") { library.toggle(playback.title) }
@@ -58,7 +64,7 @@ struct PlaybackWebView: UIViewRepresentable {
     let playback: Playback
     @Binding var isLoading: Bool
     @Binding var error: String?
-    let onProgress: (String, Double, Double) -> Void
+    let onProgress: (String, Double, Double, Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -125,7 +131,7 @@ struct PlaybackWebView: UIViewRepresentable {
                   let seconds = value["seconds"] as? Double,
                   let duration = value["duration"] as? Double,
                   let path = value["path"] as? String, path.hasPrefix("/watch/") else { return }
-            owner.onProgress(path, seconds, duration)
+            owner.onProgress(path, seconds, duration, value["paused"] as? Bool ?? true)
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,

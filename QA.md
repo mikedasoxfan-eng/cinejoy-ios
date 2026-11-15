@@ -26,6 +26,31 @@ The public site's season menu was also inspected live through REA. Options are
 label + episode count; the adapter now selects the inner label, with a fixture
 test. Real public-page extraction tests pass (six cases).
 
+## Iterations 3–5 — contrast, large text and full flows
+
+Reviewed the native iPhone screenshots for Browse, movie details, Saved Library,
+Search, Settings, TV episodes and empty History, plus iPad Home. Verified the
+refined Home captures in light mode and accessibility large text: the title is
+visible, the buttons have contrasting labels, and the large-text actions stack
+without splitting words. These are Simulator captures, not web mockups.
+
+The expanded five-case UI run passed native navigation, saved-title persistence
+across a full app relaunch, appearance selection and history deletion. It exposed
+three failures: video remained paused at zero, a subsequent app launch could not
+terminate that player session, and season 2 retained season 1 episodes. Those
+failures are recorded rather than treated as successful playback.
+
+The next revision starts ready video after the native Play action and exposes
+actual elapsed time to accessibility. The test requires an advancing video clock
+and resumed progress. It also closes the player during failure cleanup. New
+history is created only after playback advances. Settings explicitly applies its
+selected appearance to the presented sheet. Episode play overlays use dark glass
+for contrast over light artwork. A live search now requests Arrival, which is
+absent from the bundled catalog, so cached results cannot falsely pass that test.
+
+The device archive audit also verifies the audio background mode, ARM64 iOS
+platform, bundled resources, disabled casting, and lack of local-network usage.
+
 ## Current verification matrix
 
 | Surface or feature | Required evidence |

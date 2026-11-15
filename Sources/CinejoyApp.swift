@@ -37,7 +37,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .modifier(ResumeBarModifier(entry: library.history.first.flatMap { $0.fraction < 0.95 ? $0 : nil }))
+        .modifier(ResumeBarModifier(entry: library.history.first(where: { $0.fraction < 0.95 })))
         .sheet(isPresented: $library.showSettings) { SettingsScreen() }
         .fullScreenCover(item: $library.playback) { playback in
             PlayerScreen(playback: playback)

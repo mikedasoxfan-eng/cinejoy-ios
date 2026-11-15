@@ -3,17 +3,18 @@ import SwiftUI
 struct HomeScreen: View {
     @Environment(CatalogStore.self) private var catalog
     @Environment(LibraryStore.self) private var library
+    private var continuing: [WatchEntry] { Array(library.history.filter { $0.fraction < 0.95 }.prefix(10)) }
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 32) {
                 if let featured = catalog.titles.first { FeaturedTitle(title: featured) }
                 if let error = catalog.error { InlineNotice(text: error) }
-                if !library.history.isEmpty {
+                if !continuing.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Continue watching").font(.title2.bold()).padding(.horizontal, 20)
                         ScrollView(.horizontal) {
                             HStack(spacing: 14) {
-                                ForEach(library.history.filter { $0.fraction < 0.95 }.prefix(10)) { entry in
+                                ForEach(continuing) { entry in
                                     Button { library.play(entry.title, path: entry.path) } label: {
                                         VStack(alignment: .leading, spacing: 8) {
                                             Artwork(url: entry.title.heroURL).frame(width: 240, height: 135)
@@ -191,6 +192,8 @@ struct SettingsScreen: View {
                 Button("Clear history", role: .destructive) { library.clearHistory() }
             }
         }
+        .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+        .tint(Color("AccentColor"))
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }

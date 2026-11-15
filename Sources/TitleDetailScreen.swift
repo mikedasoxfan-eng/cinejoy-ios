@@ -91,7 +91,7 @@ struct TitleDetailScreen: View {
                 Button { library.play(title, path: episode.path) } label: {
                     HStack(alignment: .top, spacing: 14) {
                         Artwork(url: URL(string: episode.image)).frame(width: 120, height: 78).clipShape(.rect(cornerRadius: 12))
-                            .overlay { Image(systemName: "play.fill").foregroundStyle(.white).padding(10).glassEffect(in: .circle) }
+                            .overlay { Image(systemName: "play.fill").foregroundStyle(.white).padding(10).glassEffect(in: .circle).environment(\.colorScheme, .dark) }
                         VStack(alignment: .leading, spacing: 6) {
                             Text("\(episode.number). \(episode.name)").font(.subheadline.weight(.semibold))
                             Text(episode.overview).font(.caption).foregroundStyle(.secondary).lineLimit(3)
@@ -106,6 +106,7 @@ struct TitleDetailScreen: View {
     @MainActor private func loadEpisodes() async {
         isLoadingEpisodes = true
         episodeError = nil
+        episodes = []
         defer { isLoadingEpisodes = false }
         do {
             let page = try await reader.read(path: title.path, season: season)

@@ -14,7 +14,7 @@ import SwiftUI
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.userContentController.addUserScript(WKUserScript(
-            source: "document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='[role=dialog]{display:none!important}';document.head.append(s)});",
+            source: "document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='[role=dialog][aria-labelledby=notice-title]{display:none!important}';document.head.append(s)});",
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 430, height: 932), configuration: configuration)
         super.init()
@@ -38,6 +38,9 @@ import SwiftUI
             try Task.checkCancellation()
             guard requestID == generation else { throw CancellationError() }
             guard let current = webView.url, current.path == url.path, current.query == url.query, attempt >= 3 else { continue }
+            // Removing the announcement through its own handler releases the
+            // site's modal event boundary; CSS visibility alone does not.
+            _ = try? await webView.evaluateJavaScript("for(const dialog of document.querySelectorAll('[role=dialog]')){if(dialog.querySelector('h3')?.textContent?.trim()==='Good news!')dialog.querySelector('button[aria-label=Close]')?.click()}")
             if path.hasPrefix("/search"), url.query != nil {
                 let stillShowingSuggestions = (try? await webView.evaluateJavaScript("[...document.querySelectorAll('h2')].some(h=>h.textContent.trim()==='Trending Today')")) as? Bool
                 if stillShowingSuggestions == true { continue }
