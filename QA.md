@@ -1,15 +1,17 @@
 # Cinejoy iOS verification
 
-The current device package is iOS 26+, version 1.0.0, build 5, from source
-`d950205`, GitHub run `43739198707`. It is unsigned ARM64 for Sideloadly.
-SHA-256: `83c79ba4af34fd62fc0d101ce4ab920c8f7242c784126d32fbbada30344ccff2`.
+The current device package is iOS 26+, version 1.0.0, build 8, from source
+`c1fa078`, GitHub run `43756417223`. It is unsigned ARM64 for Sideloadly.
+SHA-256: `aca0eb3f788c4850493bac9ef74aac3ef7e667554be8e57a5d63ce80420a7192`.
 The official favicon PNG is unchanged byte for byte.
 
 ## Verified
 
-- All 13 local behavioral Node checks pass: real catalog extraction, exact episode
-  paths, caption cue export and bounds, public-master observation, no AirPlay,
+- All 15 local behavioral Node checks pass: real catalog extraction, exact episode
+  paths, caption cue export, selection/Off handoff and bounds, public-master observation, no AirPlay,
   and keeping the hidden website player paused and silent during native playback.
+  The selected language is prioritized within the cue/UTF-8 budget so other
+  loaded tracks cannot crowd it out.
 - Device Release compilation, Swift HLS parser/MIME/range checks, packaged
   resources, iOS minimum, ARM64 platform, background audio, unsigned package,
   loopback-only media transport and no local-network permission pass.
@@ -24,6 +26,34 @@ The official favicon PNG is unchanged byte for byte.
 - Build 4's focused TV run reached Season 2 and real episode playback. It failed
   at the test's next-episode scrolling: the test scrolled episode 2 above the
   viewport. Its failure screenshot and full accessibility hierarchy are retained.
+
+## Subtitle verification
+
+Native run `43754753592`, source `23a5b44`, iPhone 17 Pro:
+
+- **`testNativeCaptionRenderer` passed (52.989 seconds).** A local synthetic
+  video exercised the production AVPlayer/session/overlay/coordinator paths:
+  inline display, markup/entity cleanup, multiline cues, paused seeking,
+  portrait/landscape fullscreen, fullscreen Off/On, paused return at the same
+  15-second clock, inline Off/On and advancing caption time after Resume.
+- The separate live Inception check loaded **1,738 English cues**, automatically
+  selected them and returned to actual native playback. Its retained diagnostics
+  show `AVPlayer status=1 control=2 time=10`, one player item and
+  `captionSelected=true`.
+- The live test then failed at its final native-menu query because both the
+  info panel and the open menu contain a Subtitles button. Its selector is now
+  scoped to the menu collection view. That final menu step has **not been rerun**;
+  the overall two-test workflow is not recorded as a complete pass.
+- Eight original PNGs and provenance are in `dist/Cinejoy-Subtitle-Review`.
+  Synthetic video captures are labelled; the live provider capture is separate.
+- Build 8 retains the tested native rendering code and adds selected-track
+  export priority, covered by the behavioral Node regression. Its Release
+  package excludes the Debug QA screen and synthetic movie.
+
+Real-site REA captures also observed the English SRT becoming a blob-backed
+default TextTrack. This supports the bridge's selected-ID mapping, including
+the site's hidden TextTrack mode. Native captions now stay within the fitted
+video picture rather than the fullscreen letterbox.
 
 ## Playback verification limits
 
@@ -53,6 +83,12 @@ built/packaged in 53 seconds. Runner times vary; these are measurements, not a
 latency guarantee. Codemagic compilation caching is configured but its warm-build
 speed has not been measured in this pass.
 
+Build 6 compiled in 54 seconds and built/packaged in 63 seconds. A parallel
+Simulator first boot delayed a separate manual QA run's device stage by several
+minutes; the default now starts Simulator only after uploading the IPA.
+Build 7 compiled in 54 seconds and built/packaged in 67 seconds.
+Build 8 compiled in 63 seconds and built/packaged in 75 seconds.
+
 Native QA is separate because first-boot migration and test-runner preparation
 can take several minutes. Focus branches isolate interface, fullscreen and TV
 handoff checks; interface iterations finish after iPhone captures.
@@ -60,7 +96,7 @@ handoff checks; interface iterations finish after iPhone captures.
 ## Limits
 
 No physical iPhone test or Sideloadly installation was performed by the agent.
-Device smoothness, PiP, lock-screen controls and selecting external subtitles on
-specific providers remain hardware checks. Streaming and live catalog metadata
+Device smoothness, PiP (including its subtitles), lock-screen controls and
+other subtitle languages/providers remain separate checks. Streaming and live catalog metadata
 depend on the public website and provider availability. Simulator evidence does
 not guarantee every title or network. No app account or AirPlay was added.

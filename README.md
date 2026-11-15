@@ -11,6 +11,10 @@ resolver is not copied. A bundled
 snapshot of 131 real titles provides immediate content while live data loads.
 This is an independent personal-use client, not an official Cinejoy release.
 
+Loaded subtitle cues transfer from the public player into native overlays. A
+track selected through **Find subtitles** carries back to native playback;
+fullscreen has its own Subtitles menu with an Off option.
+
 ## Build an IPA
 
 On a Mac with Xcode 26 or newer:
@@ -57,8 +61,9 @@ at `main` runs the entire suite. On a Mac, `CINEJOY_QA_FOCUS=player` or
 `qa/fullscreen*` and `qa/handoff*` isolate fullscreen and episode switching.
 Full manual QA also captures iPad; interface iterations finish after iPhone
 captures so a second device's first boot does not delay visual review.
-Manual GitHub QA also starts Simulator boot during the device build, overlapping
-the first-boot setup with compilation.
+Simulator boot starts after the device IPA is uploaded. First-boot migration
+contends with compilation on a fresh hosted Mac, so overlap is opt-in through
+`CINEJOY_PREWARM_SIMULATOR=1`.
 
 ## Build with Codemagic
 

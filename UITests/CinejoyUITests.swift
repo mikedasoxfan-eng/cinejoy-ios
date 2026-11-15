@@ -88,7 +88,9 @@ final class CinejoyUITests: XCTestCase {
         app.buttons["Back to video"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Playback options"].waitForExistence(timeout: 5))
         XCTAssertTrue((close.value as? String ?? "").contains("captionSelected=true"), "The provider's selected track is already selected natively")
-        app.buttons["Playback options"].tap(); app.buttons["Subtitles"].tap()
+        app.buttons["Playback options"].tap()
+        // Scope to the open native menu; the info panel also has a Subtitles button.
+        app.collectionViews.buttons["Subtitles"].firstMatch.tap()
         let nativeTrack = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "hdpopcorns")).firstMatch
         XCTAssertTrue(nativeTrack.waitForExistence(timeout: 5), "The live English track appears in the native subtitle menu")
         capture("captions-08-live-native-menu", app)
