@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Pushes publish a device IPA immediately. Deliberate manual QA retains the full
+# native screen suite; a test runtime's first boot must not hold up every edit.
+if [ "${GITHUB_EVENT_NAME:-}" = push ] && [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
+  echo 'Fast IPA build: Simulator QA runs on manual workflow dispatch.'
+  exit 0
+fi
 mkdir -p dist/previews
 QA_FOCUS=${CINEJOY_QA_FOCUS:-full}
 case "$QA_FOCUS" in
