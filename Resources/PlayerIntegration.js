@@ -7,6 +7,15 @@
   const style = document.createElement('style');
   style.textContent = 'html,body{background:#000!important}button[aria-label="Back"]{visibility:hidden!important}button[aria-label="Cast to Device"],button[aria-label^="View details for "],a[href^="/settings"],a[href^="/auth"]{display:none!important}';
   document.head.append(style);
+  const mediaSnapshot = video => {
+    const env = window.__cinejoyPlayerEnvironment || {};
+    const source = video.currentSrc || video.getAttribute('src') || video.querySelector?.('source')?.src || '';
+    // Report only source kind and capabilities. Stream URLs remain private.
+    const kind = source.startsWith('blob:') ? 'blob' : source.startsWith('https:') ? 'https' : source ? 'other' : 'none';
+    let buffer = 0;
+    try { if (video.buffered?.length) buffer = Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime); } catch {}
+    return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)}`;
+  };
   const report = video => {
     const seconds=Number.isFinite(video.currentTime)?video.currentTime:0;
     const duration=Number.isFinite(video.duration)?video.duration:0;
@@ -16,7 +25,7 @@
     }
     if(Date.now()-lastReport<1000)return;
     lastReport=Date.now();
-    window.webkit.messageHandlers.watch.postMessage({seconds:Number.isFinite(video.currentTime)?video.currentTime:seconds,duration,paused:video.paused,path:location.pathname,readyState:video.readyState,networkState:video.networkState,error:video.error?.code||0,playFailure,networkTrace:(window.__cinejoyMediaTrace||[]).join(' | ')});
+    window.webkit.messageHandlers.watch.postMessage({seconds:Number.isFinite(video.currentTime)?video.currentTime:seconds,duration,paused:video.paused,path:location.pathname,readyState:video.readyState,networkState:video.networkState,error:video.error?.code||0,playFailure,networkTrace:mediaSnapshot(video)+' '+(window.__cinejoyMediaTrace||[]).join(' | ')});
   };
   document.addEventListener('timeupdate',event=>{if(event.target instanceof HTMLVideoElement)report(event.target)},true);
   setInterval(()=>{
@@ -30,7 +39,7 @@
       report(video);
       // A metadata-only preload may never reach HAVE_CURRENT_DATA until play()
       // requests media. Start once per source, preserving later user pauses.
-      const source=video.currentSrc||video.getAttribute('src');
+      const source=video.currentSrc||video.getAttribute('src')||video.querySelector?.('source')?.src;
       if(source&&started.get(video)!==source){
         started.set(video,source);
         // Use the player's action too, so its loading and playback state agree

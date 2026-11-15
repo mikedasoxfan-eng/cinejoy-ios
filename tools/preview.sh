@@ -2,6 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist/previews
+QA_FOCUS=${CINEJOY_QA_FOCUS:-full}
+case "$QA_FOCUS" in
+  full|player) ;;
+  *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;
+esac
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 test -n "$DEVICE_ID"
 xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
@@ -12,30 +17,46 @@ xcrun simctl bootstatus "$DEVICE_ID" -b
 xcrun simctl install "$DEVICE_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
 xcrun simctl status_bar "$DEVICE_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl ui "$DEVICE_ID" appearance dark
+xcrun simctl ui "$DEVICE_ID" content_size large
+TEST_SELECTION=(-only-testing:CinejoyUITests)
+if [ "$QA_FOCUS" = player ]; then
+  TEST_SELECTION=(
+    -only-testing:CinejoyUITests/CinejoyUITests/testPlaybackHistoryAndNoCasting
+    -only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection
+  )
+fi
+TEST_RESULT=0
+xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
+  -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build \
+  -resultBundlePath build/UITests.xcresult "${TEST_SELECTION[@]}" \
+  -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
+  -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
+xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
+if [ "$QA_FOCUS" = player ]; then
+  xcrun simctl shutdown "$DEVICE_ID" || true
+  exit "$TEST_RESULT"
+fi
+# Run native UI tests first so their interruption handler dismisses first-boot
+# Simulator banners before the standalone appearance captures.
+xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass || true
+xcrun simctl ui "$DEVICE_ID" appearance dark
 SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance dark
 sleep 12
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-dark.png
-xcrun simctl ui "$DEVICE_ID" appearance light
 xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass
+xcrun simctl ui "$DEVICE_ID" appearance light
 SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance light
 sleep 5
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-light.png
-xcrun simctl ui "$DEVICE_ID" content_size accessibility-large
 xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass
+xcrun simctl ui "$DEVICE_ID" content_size accessibility-large
 SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance light
 sleep 5
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-accessibility.png
 xcrun simctl ui "$DEVICE_ID" content_size large
 xcrun simctl ui "$DEVICE_ID" appearance dark
 xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass || true
-TEST_RESULT=0
-xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
-  -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build \
-  -resultBundlePath build/UITests.xcresult -only-testing:CinejoyUITests \
-  -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-  -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
-  -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
-xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
 # Release the iPhone runtime before starting an iPad on the hosted runner.
 xcrun simctl shutdown "$DEVICE_ID" || true
 IPAD_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPad" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
@@ -43,9 +64,33 @@ if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
   xcrun simctl bootstatus "$IPAD_ID" -b
   xcrun simctl install "$IPAD_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
+  xcrun simctl status_bar "$IPAD_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
   xcrun simctl ui "$IPAD_ID" appearance dark
-  SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$IPAD_ID" local.cinejoy.glass -appearance dark
-  sleep 20
-  xcrun simctl io "$IPAD_ID" screenshot dist/previews/ipad-home-dark.png
+  xcrun simctl ui "$IPAD_ID" content_size large
+  IPAD_RESULT=0
+  xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
+    -destination "platform=iOS Simulator,id=$IPAD_ID" -derivedDataPath build \
+    -resultBundlePath build/IPadUITests.xcresult \
+    -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture \
+    -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+    -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
+    -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || IPAD_RESULT=$?
+  xcrun xcresulttool export attachments --path build/IPadUITests.xcresult --output-path dist/previews/ipad-ui-tests || true
+  python3 - <<'PY'
+import json
+import pathlib
+import shutil
+root = pathlib.Path('dist/previews/ipad-ui-tests')
+manifest = root / 'manifest.json'
+if manifest.exists():
+    for test in json.loads(manifest.read_text()):
+        for attachment in test.get('attachments', []):
+            name = attachment.get('suggestedHumanReadableName', '')
+            source = root / attachment.get('exportedFileName', '')
+            if name.startswith('home-screen') and source.suffix == '.png':
+                shutil.copyfile(source, root.parent / 'ipad-home-dark.png')
+PY
+  if [ "$TEST_RESULT" -eq 0 ]; then TEST_RESULT=$IPAD_RESULT; fi
+  xcrun simctl shutdown "$IPAD_ID" || true
 fi
 exit "$TEST_RESULT"

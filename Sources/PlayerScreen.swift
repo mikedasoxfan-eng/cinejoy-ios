@@ -164,9 +164,17 @@ struct PlaybackWebView: UIViewRepresentable {
             let paused = value["paused"] as? Bool ?? true
             let ready = value["readyState"] as? Int ?? 0
             owner.onProgress(path, seconds, duration, paused, !paused && ready < 3)
-            owner.isLoading = false
-            loadingTimeout?.cancel()
-            if ready >= 2 { owner.error = nil }
+            // A video element can exist before it has any playable media.
+            // Keep the native timeout alive until a frame can actually load.
+            if ready >= 2 {
+                owner.isLoading = false
+                loadingTimeout?.cancel()
+                owner.error = nil
+            } else if let mediaError = value["error"] as? Int, mediaError != 0 {
+                owner.isLoading = false
+                loadingTimeout?.cancel()
+                owner.error = "This server could not play the video. Try another server below, or try again."
+            }
             owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration)) \(value["networkTrace"] ?? "")"
         }
 

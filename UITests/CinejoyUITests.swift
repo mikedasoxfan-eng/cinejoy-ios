@@ -2,6 +2,24 @@ import XCTest
 
 final class CinejoyUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    @MainActor func testHomeScreenCapture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launchArguments = ["-appearance", "dark"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Cinejoy"].waitForExistence(timeout: 15))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let announcement = springboard.staticTexts["Ready for Apple Intelligence"]
+        // New Simulator devices can present this system banner after launch.
+        // Dismiss it through the system UI before judging the app's layout.
+        for _ in 0..<3 {
+            if !announcement.exists { break }
+            announcement.swipeUp()
+        }
+        XCTAssertFalse(announcement.exists, "The app capture is free of the setup notification")
+        capture("home-screen", app)
+    }
+
     @MainActor func testNativeBrowsingAndLocalLibrary() throws {
         let app = XCUIApplication()
         app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
@@ -88,10 +106,19 @@ final class CinejoyUITests: XCTestCase {
         let episode = app.buttons["episode-/watch/tv/1396/2/1"]
         XCTAssertTrue(episode.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["Loading episodes…"].waitForNonExistence(timeout: 5))
-        app.swipeUp()
-        XCTAssertTrue(episode.isHittable, "The loaded season's first episode is visible and usable")
         XCTAssertEqual(episode.label, "Play episode 1, Seven Thirty-Seven")
+        let details = app.scrollViews.firstMatch
+        for _ in 0..<6 {
+            if episode.isHittable { break }
+            // Loading changes the scroll content height. Move toward the actual
+            // row instead of blindly swiping it above the visible viewport.
+            let below = episode.frame.midY > details.frame.midY
+            let start = details.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: below ? 0.7 : 0.35))
+            let end = details.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: below ? 0.4 : 0.65))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
         capture("10-season-two", app)
+        XCTAssertTrue(episode.isHittable, "The loaded season's first episode is visible and usable")
     }
 
     @MainActor func testSettingsAppearance() throws {
@@ -129,12 +156,6 @@ final class CinejoyUITests: XCTestCase {
         let advancing = NSPredicate(format: "value MATCHES %@", "Playing, ([3-9]|[1-9][0-9]+) seconds elapsed")
         let playing = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 60) == .completed
         capture("11-player", app)
-        XCTAssertTrue(playing, "The real video clock advances for at least three seconds")
-        let initialValue = status.value as? String ?? ""
-        let progresses = NSPredicate(format: "value BEGINSWITH %@ AND value != %@", "Playing, ", initialValue)
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progresses, object: status)], timeout: 10), .completed, "Playback continues advancing after the initial report")
-        XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
-        sleep(8)
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(3)
         XCTAssertGreaterThan(app.frame.width, app.frame.height, "Landscape layout has settled")
@@ -143,6 +164,12 @@ final class CinejoyUITests: XCTestCase {
         capture("11b-player-landscape", app)
         XCUIDevice.shared.orientation = .portrait
         sleep(2)
+        XCTAssertTrue(playing, "The real video clock advances for at least three seconds")
+        let initialValue = status.value as? String ?? ""
+        let progresses = NSPredicate(format: "value BEGINSWITH %@ AND value != %@", "Playing, ", initialValue)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progresses, object: status)], timeout: 10), .completed, "Playback continues advancing after the initial report")
+        XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
+        sleep(8)
         let savedSeconds = elapsed(status)
         XCTAssertGreaterThanOrEqual(savedSeconds, 3)
         app.buttons["Close player"].tap()

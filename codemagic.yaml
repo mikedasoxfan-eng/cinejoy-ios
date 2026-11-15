@@ -47,3 +47,31 @@ workflows:
       - dist/Cinejoy-unsigned.ipa
       - dist/verification.json
       - dist/previews/**
+
+  ios-player-qa:
+    name: Cinejoy focused playback and TV Simulator QA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: "26.6"
+      node: lts
+      vars:
+        CINEJOY_QA_FOCUS: player
+    scripts:
+      - name: Prepare XcodeGen
+        script: |
+          set -euo pipefail
+          xcodebuild -version
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          fi
+      - name: Verify catalog and playback adapters
+        script: npm ci --ignore-scripts && npm test
+      - name: Build unsigned iPhone IPA
+        script: bash tools/build.sh
+      - name: Exercise real playback and TV season selection
+        script: bash tools/preview.sh
+    artifacts:
+      - dist/Cinejoy-unsigned.ipa
+      - dist/verification.json
+      - dist/previews/**
