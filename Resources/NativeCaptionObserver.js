@@ -28,9 +28,12 @@
     const selectedElement = Array.from(video?.querySelectorAll?.('track') || []).find(element => element.default);
     const selectedTrack = selectedElement?.track || Array.from(tracks || []).find(track => track.mode === 'showing');
     const message = {tracks: [], selectedID: selectedTrack ? identity(selectedTrack) : null, truncated: false};
+    const candidates = Array.from(tracks || []);
+    const selectedIndex = candidates.indexOf(selectedTrack);
+    if (selectedIndex > 0) candidates.unshift(...candidates.splice(selectedIndex, 1));
     let allocation = 128;
     let cueCount = 0;
-    for (const track of Array.from(tracks || [])) {
+    for (const track of candidates) {
       if (track.kind !== 'captions' && track.kind !== 'subtitles') continue;
       let loaded;
       try { loaded = track.cues; } catch { continue; }

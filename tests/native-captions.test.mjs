@@ -70,6 +70,20 @@ test('exports loaded ordinary TextTrack cues, labels and language without source
   assert.deepEqual(observer.messages.at(-1).tracks, [], 'removing the video tracks clears native captions');
 });
 
+test('the selected language survives the transfer budget ahead of other loaded tracks', () => {
+  const background = {kind: 'captions', label: 'Other loaded language', mode: 'hidden',
+    cues: Array.from({length: 5000}, (_, i) => ({startTime: i, endTime: i + 1, text: 'x'.repeat(300)}))};
+  const selected = {kind: 'captions', label: 'Selected language', mode: 'hidden',
+    cues: [{startTime: 1, endTime: 3, text: 'The user chose this language'}]};
+  const message = observe([background, selected], [{default: true, track: selected}]).messages[0];
+  assert.equal(message.truncated, true);
+  assert.equal(message.tracks[0].label, 'Selected language');
+  assert.equal(message.selectedID, message.tracks[0].id);
+  assert.equal(message.tracks[0].cues.length, 1);
+  assert.ok(Buffer.byteLength(JSON.stringify(message), 'utf8') <= 1_000_000);
+  assert.equal(background.mode, 'hidden', 'prioritizing export does not reorder or change website tracks');
+});
+
 test('limits total cues and UTF-8 message size while ignoring invalid/unloaded cues', () => {
   for (const text of ['x', '界🙂'.repeat(100)]) {
     const tracks = [{kind: 'subtitles', label: 'Loaded', language: 'en',
