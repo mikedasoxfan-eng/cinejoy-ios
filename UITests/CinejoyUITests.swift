@@ -2,6 +2,57 @@ import XCTest
 
 final class CinejoyUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    /// Every failed test keeps evidence, including failures that happen before a
+    /// test's own capture() (for example a missing element after a long wait):
+    /// the physical screen and the full accessibility hierarchy of the app.
+    override func tearDown() async throws {
+        let failed = (testRun?.failureCount ?? 0) + (testRun?.unexpectedExceptionCount ?? 0) > 0
+        if failed { await MainActor.run { captureFailureEvidence() } }
+        try await super.tearDown()
+    }
+
+    @MainActor private func captureFailureEvidence() {
+        let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screen.name = "failure-screen"
+        screen.lifetime = .keepAlways
+        add(screen)
+        let app = XCUIApplication()
+        let hierarchy = XCTAttachment(string: app.state == .notRunning ? "App not running" : app.debugDescription)
+        hierarchy.name = "failure-accessibility"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+        if app.state != .notRunning, app.buttons["Close player"].exists {
+            let media = XCTAttachment(string: app.buttons["Close player"].value as? String ?? "No media diagnostics")
+            media.name = "failure-media-state"
+            media.lifetime = .keepAlways
+            add(media)
+        }
+    }
+
+    /// The light Home hero must render its text over the art, not just the Play
+    /// button. Uses the app's real appearance preference, then checks that the
+    /// title, metadata and Details action are on screen inside the hero card.
+    @MainActor func testLightHomeHeroCapture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launchArguments = ["-appearance", "light"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Cinejoy"].waitForExistence(timeout: 15))
+        let hero = app.otherElements["featured-hero"]
+        XCTAssertTrue(hero.waitForExistence(timeout: 10), "The featured hero is present")
+        let title = app.staticTexts["featured-title"]
+        let meta = app.staticTexts["featured-metadata"]
+        let details = hero.buttons["Details"]
+        for element in [title, meta, details] {
+            XCTAssertTrue(element.waitForExistence(timeout: 5), "\(element) exists in light mode")
+            XCTAssertTrue(element.isHittable, "\(element) is on screen in light mode")
+            XCTAssertTrue(hero.frame.contains(element.frame), "\(element) lies inside the hero card")
+        }
+        XCTAssertFalse((title.label).isEmpty, "The hero title has text")
+        capture("home-light-hero", app)
+    }
+
     @MainActor func testHomeScreenCapture() throws {
         let app = XCUIApplication()
         app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
@@ -154,6 +205,21 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 15), .completed,
                        "The next episode advances after the previous session is dismantled")
         capture("10c-next-tv-episode-player", app)
+        let beforeServers = elapsed(status)
+        app.buttons["Playback options"].tap()
+        let chooseServer = app.buttons["Choose server"]
+        XCTAssertTrue(chooseServer.waitForExistence(timeout: 5)); chooseServer.tap()
+        let backToVideo = app.buttons["Back to video"].firstMatch
+        XCTAssertTrue(backToVideo.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.webViews.buttons["Fullscreen"].waitForExistence(timeout: 10),
+                      "Provider controls become accessible when explicitly opened")
+        capture("17-provider-controls", app)
+        backToVideo.tap()
+        XCTAssertTrue(app.buttons["Fullscreen"].waitForNonExistence(timeout: 5),
+                      "Provider controls become inaccessible behind native video again")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 15), .completed)
+        XCTAssertGreaterThanOrEqual(elapsed(status), beforeServers, "Returning from server controls preserves the native position")
+        capture("17b-back-to-native-video", app)
     }
 
     /// AVKit's own fullscreen must keep the same AVPlayer: time keeps advancing through

@@ -107,4 +107,13 @@ struct SupplementalInfo: Decodable, Sendable {
     var imdb_rating: String?
     var quality_tag_new: String?
     var content_rating: String?
+    /// Public season count from the same /info endpoint. `max_episode` is only the
+    /// latest season's episode count and is deliberately not used for other seasons.
+    var max_season: Int?
+
+    /// Seasons 1...max_season when the count is plausible; empty otherwise.
+    var publicSeasons: [Int] {
+        guard let count = max_season, (1...100).contains(count) else { return [] }
+        return Array(1...count)
+    }
 }

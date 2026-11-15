@@ -46,6 +46,7 @@ elif [ "$QA_FOCUS" = fullscreen ]; then
 elif [ "$QA_FOCUS" = interface ]; then
   TEST_SELECTION=(
     -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture
+    -only-testing:CinejoyUITests/CinejoyUITests/testLightHomeHeroCapture
     -only-testing:CinejoyUITests/CinejoyUITests/testNativeBrowsingAndLocalLibrary
     -only-testing:CinejoyUITests/CinejoyUITests/testSearchEmptyStateAndLiveResults
     -only-testing:CinejoyUITests/CinejoyUITests/testSettingsAppearance

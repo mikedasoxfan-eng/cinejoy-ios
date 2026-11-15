@@ -42,6 +42,10 @@ catalog loads. Cached data is not presented as live trending data.
   background, with the poster and title overlapping it. When only a poster exists, the
   art is that poster, blurred into an ambient field. Play reads "Resume" (with the
   episode label) when local history has a position, and shows progress below.
+- The series season selector appears as soon as the public `/info` season count
+  (`max_season`, bounded 1–100) is known. It is merged with the seasons the page
+  shows and never shrinks while open. Episode rows still come only from the real
+  page. Episode titles and counts are never derived from `max_episode`.
 - Continue watching is a 16:9 row with progress on the art. It reads history in its
   own view so playback updates never redraw Home.
 

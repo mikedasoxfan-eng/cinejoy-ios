@@ -35,9 +35,15 @@ struct TitleDetailScreen: View {
             ToolbarItem(placement: .topBarTrailing) { ShareLink(item: title.siteURL).accessibilityIdentifier("share-title") }
         }
         .task {
-            if let cached = catalog.cachedInfo(for: title) { info = cached; return }
-            let loaded = await catalog.info(for: title)
-            withAnimation(.easeOut(duration: 0.2)) { info = loaded }
+            if let cached = catalog.cachedInfo(for: title) {
+                info = cached
+            } else {
+                let loaded = await catalog.info(for: title)
+                withAnimation(.easeOut(duration: 0.2)) { info = loaded }
+            }
+            // The season selector comes from public metadata as soon as it is known,
+            // instead of waiting for the hidden episode page to finish rendering.
+            if title.isSeries, let info, !info.publicSeasons.isEmpty { seasons = mergedSeasons(info.publicSeasons) }
         }
         .task(id: season) { if title.isSeries { await loadEpisodes() } }
         .sensoryFeedback(.selection, trigger: library.contains(title))
@@ -250,6 +256,14 @@ struct TitleDetailScreen: View {
 
     private func apply(_ page: CatalogPage) {
         if !page.episodes.isEmpty { episodes = page.episodes }
-        if !page.seasons.isEmpty { seasons = page.seasons }
+        if !page.seasons.isEmpty { seasons = mergedSeasons(page.seasons) }
+    }
+
+    /// Union of seasons already offered, seasons the page shows (including specials
+    /// as season 0) and the public season count. Never shrinks while the screen is
+    /// open, so a slow or partial page cannot take away a season the user can pick.
+    private func mergedSeasons(_ incoming: [Int]) -> [Int] {
+        let all = Set(seasons + incoming + (info?.publicSeasons ?? []) + [season])
+        return all.filter { (0...100).contains($0) }.sorted()
     }
 }

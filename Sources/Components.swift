@@ -209,6 +209,7 @@ struct FeaturedTitle: View {
         }
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("featured-hero")
     }
 
     private var details: some View {
@@ -216,8 +217,10 @@ struct FeaturedTitle: View {
             Text(title.name).font(.largeTitle.bold()).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 .minimumScaleFactor(0.8)
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("featured-title")
             Text([title.year, title.isSeries ? "Series" : "Movie", title.rating.isEmpty ? nil : "★ \(title.rating)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                .accessibilityIdentifier("featured-metadata")
             if !title.overview.isEmpty, !dynamicTypeSize.isAccessibilitySize {
                 Text(title.overview).font(.footnote).foregroundStyle(.white.opacity(0.78)).lineLimit(2)
                     .frame(maxWidth: 560, alignment: .leading)
