@@ -190,7 +190,7 @@ private struct PlayerCloseButton: View {
         Button("Close player", systemImage: "xmark", action: close)
             .labelStyle(.iconOnly).frame(width: 44, height: 44)
             .buttonStyle(.glass).buttonBorderShape(.circle)
-            .accessibilityValue(isTesting ? "\(session.diagnostics) captionTracks=\(session.captionTracks.count) captionCues=\(session.captionTracks.reduce(0) { $0 + $1.cues.count })" : "")
+            .accessibilityValue(isTesting ? session.diagnostics + session.captionDiagnostics : "")
     }
 }
 
@@ -551,12 +551,17 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     @ObservationIgnored private var lastDiagnosticTick = -1
     @ObservationIgnored private var startedAt = ContinuousClock.now
     @ObservationIgnored private var stopped = true
+    @ObservationIgnored private var choosingProviderSubtitles = false
     private let audioOwnerID = UUID()
     private static var activeAudioOwner: UUID?
     private static let audioQueue = DispatchQueue(label: "local.cinejoy.audio-session", qos: .userInitiated)
 
     var statusLabel: String { isLoading ? "Preparing" : isBuffering ? "Buffering" : isPaused ? "Paused" : "Playing" }
     var selectedCaption: CaptionTrack? { captionTracks.first(where: { $0.id == selectedCaptionID }) }
+    var captionDiagnostics: String {
+        let count = captionTracks.reduce(0) { $0 + $1.cues.count }
+        return " captionTracks=\(captionTracks.count) captionCues=\(count) captionSelected=\(selectedCaptionID != nil)"
+    }
     /// After AVPlayer is ready the hidden website no longer needs to be composited.
     var websiteParked: Bool { player != nil && !isLoading && error == nil && !showProviderControls }
     var canEnterFullScreen: Bool { player != nil && !isLoading && error == nil && !showProviderControls }
@@ -582,6 +587,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         selectedCaptionID = nil
         error = nil
         showProviderControls = false
+        choosingProviderSubtitles = false
         isLoading = true
         isSlow = false
         phase = .resolving
@@ -657,7 +663,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         native.automaticallyWaitsToMinimizeStalling = true
         player = native
         applyQuality()
-        showProviderControls = false
+        if !choosingProviderSubtitles { showProviderControls = false }
         timeControlObserver = native.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] native, _ in
             let status = native.timeControlStatus
             Task { @MainActor in
@@ -687,7 +693,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
                     self.isSlow = false
                     self.phase = .ready
                     self.error = nil
-                    self.pauseWebsitePlayer()
+                    if !self.showProviderControls { self.pauseWebsitePlayer() }
                     let elapsed = self.elapsedDescription()
                     Perf.log.info("Player ready after \(elapsed, privacy: .public)")
                     let length = item.duration.seconds
@@ -698,10 +704,10 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
                         native.seek(to: CMTime(seconds: seek, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in
                             Task { @MainActor [weak self] in
                                 guard let self, requestID == self.generation else { return }
-                                native.play()
+                                if !self.showProviderControls { native.play() }
                             }
                         }
-                    } else { native.play() }
+                    } else if !self.showProviderControls { native.play() }
                 case .failed:
                     self.loadingTimeout?.cancel()
                     self.slowTimer?.cancel()
@@ -773,12 +779,22 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
 
     func receiveCaptions(_ body: Any) {
         guard let tracks = CaptionTrack.decodeMessage(body) else { return }
-        guard tracks != captionTracks else { return }
-        captionTracks = tracks
+        let previous = selectedCaption
+        if tracks != captionTracks { captionTracks = tracks }
+        if choosingProviderSubtitles, let message = body as? [String: Any], message.keys.contains("selectedID") {
+            if message["selectedID"] is NSNull { selectedCaptionID = nil }
+            else if let id = message["selectedID"] as? String, tracks.contains(where: { $0.id == id }) { selectedCaptionID = id }
+        }
+        // A provider can recreate the TextTrack without changing its language/file.
+        if selectedCaptionID != nil, let previous, !tracks.contains(where: { $0.id == selectedCaptionID }),
+           let replacement = tracks.first(where: { $0.label == previous.label && $0.language == previous.language }) {
+            selectedCaptionID = replacement.id
+        }
         if !tracks.contains(where: { $0.id == selectedCaptionID }) { selectedCaptionID = nil }
     }
 
     func openProviderControls(subtitles: Bool = false) {
+        choosingProviderSubtitles = subtitles
         player?.pause()
         showProviderControls = true
         webView?.isHidden = false
@@ -789,6 +805,17 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     }
 
     func returnToNativePlayer() {
+        if choosingProviderSubtitles, let webView {
+            webView.evaluateJavaScript("window.__cinejoyRefreshCaptions?.()") { [weak self] result, _ in
+                guard let self else { return }
+                if let result { self.receiveCaptions(result) }
+                self.finishReturningToNativePlayer()
+            }
+        } else { finishReturningToNativePlayer() }
+    }
+
+    private func finishReturningToNativePlayer() {
+        choosingProviderSubtitles = false
         showProviderControls = false
         pauseWebsitePlayer()
         if player?.currentItem?.status == .readyToPlay { player?.play() }
@@ -911,6 +938,7 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
         /// Captions live in AVKit's content overlay (between the video and its
         /// controls), so they travel with the video into fullscreen.
         private func makeCaptionHost(in controller: AVPlayerViewController) -> UIHostingController<NativeCaptionLayer>? {
+            controller.loadViewIfNeeded()
             guard let overlay = controller.contentOverlayView else { return nil }
             let host = UIHostingController(rootView: NativeCaptionLayer(session: session))
             host.view.backgroundColor = .clear
@@ -950,7 +978,7 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
             child.entersFullScreenWhenPlaybackBegins = false
             child.exitsFullScreenWhenPlaybackEnds = false
             child.view.backgroundColor = .black
-            let container = NativeFullScreenContainer(playerController: child) { [weak self] container in
+            let container = NativeFullScreenContainer(playerController: child, session: session) { [weak self] container in
                 self?.closeFullScreen(container)
             }
             container.dismissedWithoutOwner = { [weak self] container in

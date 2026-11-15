@@ -23,7 +23,11 @@
       observedTracks = tracks;
       for (const event of ['addtrack', 'removetrack', 'change']) tracks.addEventListener?.(event, schedule);
     }
-    const message = {tracks: [], truncated: false};
+    // Cinejoy marks its chosen external <track> as default, even when the
+    // website draws the cues itself and all TextTracks have hidden mode.
+    const selectedElement = Array.from(video?.querySelectorAll?.('track') || []).find(element => element.default);
+    const selectedTrack = selectedElement?.track || Array.from(tracks || []).find(track => track.mode === 'showing');
+    const message = {tracks: [], selectedID: selectedTrack ? identity(selectedTrack) : null, truncated: false};
     let allocation = 128;
     let cueCount = 0;
     for (const track of Array.from(tracks || [])) {
@@ -62,11 +66,12 @@
     if (payload !== lastPayload && encoder.encode(payload).byteLength <= MAX_BYTES) {
       try {
         const handler = window.webkit?.messageHandlers?.captions;
-        if (!handler) return;
+        if (!handler) return message;
         handler.postMessage(message);
         lastPayload = payload;
       } catch {}
     }
+    return message;
   };
   function schedule() {
     if (timer !== undefined) return;
@@ -83,5 +88,7 @@
   });
   observer.observe(document, {subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'label', 'srclang', 'default']});
   setInterval(schedule, 1000);
+  // Returning from the provider picker explicitly flushes its current choice.
+  window.__cinejoyRefreshCaptions = scan;
   schedule();
 })();

@@ -28,8 +28,12 @@ final class CinejoyUITests: XCTestCase {
         capture("captions-02-paused-seek", app)
         app.buttons["Full Screen"].tap()
         XCTAssertTrue(app.buttons["native-fullscreen-return"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "native-caption-text", "Second caption")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "native-caption-text", "Second caption")).firstMatch.waitForExistence(timeout: 5))
         capture("captions-03-fullscreen-portrait", app)
+        app.buttons["fullscreen-subtitles"].tap(); app.buttons["Off"].tap()
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 5), "Captions can be disabled inside fullscreen")
+        app.buttons["fullscreen-subtitles"].tap(); app.buttons["English QA"].tap()
+        XCTAssertTrue(caption.waitForExistence(timeout: 5), "Captions can be enabled inside fullscreen")
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(2)
         capture("captions-04-fullscreen-landscape", app)
@@ -84,6 +88,7 @@ final class CinejoyUITests: XCTestCase {
         let nativeTrack = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "hdpopcorns")).firstMatch
         XCTAssertTrue(nativeTrack.waitForExistence(timeout: 5), "The live English track appears in the native subtitle menu")
         capture("captions-08-live-native-menu", app)
+        XCTAssertTrue((close.value as? String ?? "").contains("captionSelected=true"), "The provider's selected track is already selected natively")
         nativeTrack.tap()
     }
 

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../Resources/NativeCaptionObserver.js', import.meta.url), 'utf8');
-function observe(tracks) {
+function observe(tracks, elements = []) {
   const messages = [];
   const listEvents = {};
   const documentEvents = {};
@@ -12,16 +12,35 @@ function observe(tracks) {
   let clock = 10_000;
   tracks.addEventListener = (name, action) => { listEvents[name] = action; };
   tracks.removeEventListener = () => {};
+  const window = {webkit: {messageHandlers: {captions: {postMessage: value => messages.push(JSON.parse(JSON.stringify(value)))}}}};
   vm.runInNewContext(source, {
-    window: {webkit: {messageHandlers: {captions: {postMessage: value => messages.push(JSON.parse(JSON.stringify(value)))}}}},
-    document: {querySelector: () => ({textTracks: tracks}), addEventListener: (name, action) => { documentEvents[name] = action; }},
+    window,
+    document: {querySelector: () => ({textTracks: tracks, querySelectorAll: () => elements}), addEventListener: (name, action) => { documentEvents[name] = action; }},
     MutationObserver: class {observe() {}}, TextEncoder,
     Date: {now: () => clock}, setTimeout: action => { pending = action; return 1; }, setInterval() {},
   });
   const flush = () => { const action = pending; pending = undefined; clock += 1000; action?.(); };
   flush();
-  return {messages, flush, change: () => listEvents.change(), load: () => documentEvents.load({target: {tagName: 'TRACK'}})};
+  return {messages, flush, refresh: () => JSON.parse(JSON.stringify(window.__cinejoyRefreshCaptions())), change: () => listEvents.change(), load: () => documentEvents.load({target: {tagName: 'TRACK'}})};
 }
+
+test('hands the provider choice back even with hidden tracks, unchanged cues, or captions Off', () => {
+  const first = {kind: 'captions', label: 'English', mode: 'hidden', cues: [{startTime: 1, endTime: 3, text: 'First'}]};
+  const second = {kind: 'captions', label: 'French', mode: 'hidden', cues: [{startTime: 1, endTime: 3, text: 'Second'}]};
+  const elements = [{default: true, track: first}, {default: false, track: second}];
+  const observer = observe([first, second], elements);
+  const original = observer.messages[0];
+  assert.equal(original.selectedID, original.tracks[0].id);
+  elements[0].default = false; elements[1].default = true;
+  const changed = observer.refresh();
+  assert.equal(changed.selectedID, original.tracks[1].id);
+  assert.deepEqual(changed.tracks, original.tracks, 'selection changes need no cue reload');
+  elements[1].default = false;
+  assert.equal(observer.refresh().selectedID, null, 'Off is explicit rather than selecting the first loaded track');
+  first.mode = 'showing';
+  assert.equal(observer.refresh().selectedID, original.tracks[0].id, 'in-band showing tracks also hand back their choice');
+  assert.equal(observer.refresh().selectedID, original.tracks[0].id, 'explicit return works even when no message changed');
+});
 
 test('exports loaded ordinary TextTrack cues, labels and language without source URLs', () => {
   const loaded = {

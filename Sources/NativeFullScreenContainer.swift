@@ -10,6 +10,7 @@ import AVKit
 /// automatic modal-close pause to interpret.
 @MainActor final class NativeFullScreenContainer: UIViewController {
     let playerController: AVPlayerViewController
+    private let session: NativePlaybackSession
     /// Called when the return control is pressed. The owner samples state and dismisses.
     private let requestClose: (NativeFullScreenContainer) -> Void
     /// Called if the container leaves the screen without the owner closing it.
@@ -20,8 +21,9 @@ import AVKit
     /// Room reserved above AVKit's own controls for the return control.
     private static let controlBand: CGFloat = 60
 
-    init(playerController: AVPlayerViewController, requestClose: @escaping (NativeFullScreenContainer) -> Void) {
+    init(playerController: AVPlayerViewController, session: NativePlaybackSession, requestClose: @escaping (NativeFullScreenContainer) -> Void) {
         self.playerController = playerController
+        self.session = session
         self.requestClose = requestClose
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
@@ -44,7 +46,7 @@ import AVKit
         // the return control so neither ever covers the other.
         playerController.additionalSafeAreaInsets = UIEdgeInsets(top: Self.controlBand, left: 0, bottom: 0, right: 0)
 
-        let host = UIHostingController(rootView: FullScreenReturnControl { [weak self] in
+        let host = UIHostingController(rootView: FullScreenReturnControl(session: session) { [weak self] in
             guard let self else { return }
             self.requestClose(self)
         })
@@ -78,10 +80,12 @@ import AVKit
 
 /// The visible, always-available way back from the app's fullscreen.
 struct FullScreenReturnControl: View {
+    let session: NativePlaybackSession
     let action: () -> Void
 
     var body: some View {
-        Button("Exit Full Screen", systemImage: "arrow.down.right.and.arrow.up.left", action: action)
+        HStack(spacing: 12) {
+          Button("Exit Full Screen", systemImage: "arrow.down.right.and.arrow.up.left", action: action)
             .labelStyle(.iconOnly)
             .font(.body.weight(.semibold))
             .frame(width: 44, height: 44)
@@ -90,6 +94,16 @@ struct FullScreenReturnControl: View {
             .tint(Color("AccentColor"))
             .accessibilityIdentifier("native-fullscreen-return")
             .accessibilityHint("Returns to the player with the video in the same state")
-            .environment(\.colorScheme, .dark)
+          if !session.captionTracks.isEmpty {
+            NativeCaptionMenu(tracks: session.captionTracks, selection: Binding(get: { session.selectedCaptionID }, set: {
+                session.selectedCaptionID = $0
+                session.fullScreenPresenter?.setCaptions(active: $0 != nil)
+            }))
+            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            .buttonStyle(.glass).buttonBorderShape(.circle)
+            .accessibilityIdentifier("fullscreen-subtitles")
+          }
+        }
+        .environment(\.colorScheme, .dark)
     }
 }
