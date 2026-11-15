@@ -17,6 +17,10 @@ targets:
     type: application
     platform: iOS
     sources: [Sources, Resources]
+    info:
+      path: Generated/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.cinejoy.glass

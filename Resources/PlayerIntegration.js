@@ -3,7 +3,7 @@
   let resumed = false;
   const resumeAt = __RESUME_SECONDS__;
   const style = document.createElement('style');
-  style.textContent = 'html,body{background:#000!important}button[aria-label="Back"]{visibility:hidden!important}button[aria-label="Cast to Device"],a[href^="/settings"],a[href^="/auth"]{display:none!important}';
+  style.textContent = 'html,body{background:#000!important}button[aria-label="Back"]{visibility:hidden!important}button[aria-label="Cast to Device"],button[aria-label^="View details for "],a[href^="/settings"],a[href^="/auth"]{display:none!important}';
   document.head.append(style);
   const report = video => {
     if(!Number.isFinite(video.currentTime)||!Number.isFinite(video.duration)||video.duration<=0)return;

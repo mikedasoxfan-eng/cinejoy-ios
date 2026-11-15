@@ -10,4 +10,5 @@ xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Release \
 mkdir -p dist/Payload
 ditto build/Build/Products/Release-iphoneos/Cinejoy.app dist/Payload/Cinejoy.app
 (cd dist && ditto -c -k --keepParent Payload Cinejoy-unsigned.ipa)
+python3 tools/verify_ipa.py dist/Cinejoy-unsigned.ipa > dist/verification.json
 echo "Created $(pwd)/dist/Cinejoy-unsigned.ipa — re-sign with your sideloading tool."

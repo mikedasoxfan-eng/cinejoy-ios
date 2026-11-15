@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AVFAudio
 
 struct PlayerScreen: View {
     let playback: Playback
@@ -62,6 +63,9 @@ struct PlaybackWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> WKWebView {
+        let audio = AVAudioSession.sharedInstance()
+        try? audio.setCategory(.playback, mode: .moviePlayback)
+        try? audio.setActive(true)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.allowsInlineMediaPlayback = true
@@ -93,6 +97,7 @@ struct PlaybackWebView: UIViewRepresentable {
         view.loadHTMLString("", baseURL: nil)
         view.navigationDelegate = nil
         view.uiDelegate = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
