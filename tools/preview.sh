@@ -15,15 +15,20 @@ if [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
     qa/interface*) QA_FOCUS=interface ;;
     qa/handoff*) QA_FOCUS=handoff ;;
     qa/fullscreen*) QA_FOCUS=fullscreen ;;
+    qa/captions*) QA_FOCUS=captions ;;
   esac
 fi
 case "$QA_FOCUS" in
-  full|player|interface|handoff|fullscreen) ;;
+  full|player|interface|handoff|fullscreen|captions) ;;
   *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;
 esac
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 test -n "$DEVICE_ID"
 xcrun simctl boot "$DEVICE_ID" || true
+if [ "$QA_FOCUS" = captions ]; then
+  swift tools/MakeCaptionFixture.swift Resources/CaptionQAFixture.mp4
+  xcodegen generate --use-cache
+fi
 xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build \
   ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
@@ -43,6 +48,11 @@ elif [ "$QA_FOCUS" = handoff ]; then
   TEST_SELECTION=(-only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection)
 elif [ "$QA_FOCUS" = fullscreen ]; then
   TEST_SELECTION=(-only-testing:CinejoyUITests/CinejoyUITests/testAVKitFullscreenRoundTripKeepsPlayback)
+elif [ "$QA_FOCUS" = captions ]; then
+  TEST_SELECTION=(
+    -only-testing:CinejoyUITests/CinejoyUITests/testNativeCaptionRenderer
+    -only-testing:CinejoyUITests/CinejoyUITests/testLiveSubtitleBridge
+  )
 elif [ "$QA_FOCUS" = interface ]; then
   TEST_SELECTION=(
     -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture
@@ -60,7 +70,7 @@ xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug 
   -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
 xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
-if [ "$QA_FOCUS" = player ] || [ "$QA_FOCUS" = handoff ] || [ "$QA_FOCUS" = fullscreen ]; then
+if [ "$QA_FOCUS" = player ] || [ "$QA_FOCUS" = handoff ] || [ "$QA_FOCUS" = fullscreen ] || [ "$QA_FOCUS" = captions ]; then
   xcrun simctl shutdown "$DEVICE_ID" || true
   exit "$TEST_RESULT"
 fi

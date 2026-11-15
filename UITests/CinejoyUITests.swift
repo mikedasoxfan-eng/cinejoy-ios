@@ -3,6 +3,90 @@ import XCTest
 final class CinejoyUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Synthetic local movie verifies the real AVKit overlay and its clock without
+    /// letting a provider outage masquerade as a renderer failure.
+    @MainActor func testNativeCaptionRenderer() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launchEnvironment["CINEJOY_CAPTION_QA"] = "1"
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.staticTexts["caption-qa-status"].waitForExistence(timeout: 15))
+        let playing = NSPredicate(format: "label == %@", "Playing")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: playing, object: app.staticTexts["caption-qa-status"])], timeout: 15), .completed)
+        app.buttons["First cue"].tap()
+        app.buttons["Subtitles"].tap()
+        app.buttons["English QA"].tap()
+        let caption = app.staticTexts["native-caption-text"].firstMatch
+        XCTAssertTrue(caption.waitForExistence(timeout: 5))
+        XCTAssertEqual(caption.label, "First caption & timing", "HTML styling is stripped and entities decoded")
+        capture("captions-01-inline-first", app)
+        app.buttons["Pause and seek"].tap()
+        let second = NSPredicate(format: "label CONTAINS %@", "Second caption")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: second, object: caption)], timeout: 5), .completed,
+                       "Seeking while paused refreshes the displayed cue")
+        capture("captions-02-paused-seek", app)
+        app.buttons["Full Screen"].tap()
+        XCTAssertTrue(app.buttons["native-fullscreen-return"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "native-caption-text", "Second caption")).firstMatch.exists)
+        capture("captions-03-fullscreen-portrait", app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(2)
+        capture("captions-04-fullscreen-landscape", app)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "native-caption-text", "Second caption")).firstMatch.exists)
+        app.buttons["native-fullscreen-return"].tap()
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(app.buttons["Subtitles"].waitForExistence(timeout: 5))
+        app.buttons["Subtitles"].tap(); app.buttons["Off"].tap()
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 5), "Off removes the native caption overlay")
+        capture("captions-05-off", app)
+        app.buttons["Subtitles"].tap(); app.buttons["English QA"].tap()
+        XCTAssertTrue(caption.waitForExistence(timeout: 5))
+        let before = Double(app.staticTexts["caption-qa-clock"].label) ?? -1
+        app.buttons["Resume"].tap()
+        let advancing = NSPredicate { _, _ in (Double(app.staticTexts["caption-qa-clock"].label) ?? -1) > before + 1 }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: nil)], timeout: 5), .completed)
+        capture("captions-06-resumed", app)
+    }
+
+    /// Separately exercises the actual public provider's subtitle selection and
+    /// transfer into the native menu. Does not claim network video playback.
+    @MainActor func testLiveSubtitleBridge() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launch()
+        app.tabBars.buttons["Search"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap(); field.typeText("Inception")
+        let title = app.buttons["title-movie:27205"]
+        XCTAssertTrue(title.waitForExistence(timeout: 8)); title.tap()
+        let play = app.buttons["play-title"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5)); play.tap()
+        let close = app.buttons["Close player"]
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        app.buttons["Playback options"].tap(); app.buttons["Find subtitles"].tap()
+        let web = app.webViews.firstMatch
+        let english = web.buttons.matching(NSPredicate(format: "label MATCHES %@", "en English [0-9]+" )).firstMatch
+        if !english.waitForExistence(timeout: 20) {
+            let subtitles = web.buttons["Subtitles"]
+            XCTAssertTrue(subtitles.waitForExistence(timeout: 20)); subtitles.tap()
+        }
+        XCTAssertTrue(english.waitForExistence(timeout: 15)); english.tap()
+        let track = web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "[hdpopcorns]-Inception-1080p-English-Subtitles-Free-Download-19.srt")).firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 10)); track.tap()
+        let loaded = NSPredicate(format: "value MATCHES %@", ".*captionCues=[1-9][0-9]*.*")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: loaded, object: close)], timeout: 30), .completed,
+                       "The actual provider's loaded cues reach the native session")
+        capture("captions-07-live-provider", app)
+        app.buttons["Back to video"].firstMatch.tap()
+        app.buttons["Playback options"].tap(); app.buttons["Subtitles"].tap()
+        let nativeTrack = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "hdpopcorns")).firstMatch
+        XCTAssertTrue(nativeTrack.waitForExistence(timeout: 5), "The live English track appears in the native subtitle menu")
+        capture("captions-08-live-native-menu", app)
+        nativeTrack.tap()
+    }
+
     /// Every failed test keeps evidence, including failures that happen before a
     /// test's own capture() (for example a missing element after a long wait):
     /// the physical screen and the full accessibility hierarchy of the app.

@@ -190,7 +190,7 @@ private struct PlayerCloseButton: View {
         Button("Close player", systemImage: "xmark", action: close)
             .labelStyle(.iconOnly).frame(width: 44, height: 44)
             .buttonStyle(.glass).buttonBorderShape(.circle)
-            .accessibilityValue(isTesting ? session.diagnostics : "")
+            .accessibilityValue(isTesting ? "\(session.diagnostics) captionTracks=\(session.captionTracks.count) captionCues=\(session.captionTracks.reduce(0) { $0 + $1.cues.count })" : "")
     }
 }
 
@@ -715,6 +715,18 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         }
     }
 
+    #if DEBUG
+    /// Uses the production AVPlayer observer/overlay path with a local QA movie.
+    /// The fixture is generated only by the focused Simulator job.
+    func prepareCaptionQA(url: URL) {
+        stop()
+        stopped = false
+        generation = UUID()
+        isLoading = true
+        installPlayer(url: url, requestID: generation)
+    }
+    #endif
+
     private func tick(_ elapsed: Double, item: AVPlayerItem, native: AVPlayer) {
         let length = item.duration.seconds
         if length.isFinite, length > 0, length != duration { duration = length }
@@ -903,7 +915,9 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
             let host = UIHostingController(rootView: NativeCaptionLayer(session: session))
             host.view.backgroundColor = .clear
             host.view.isUserInteractionEnabled = false
-            host.view.accessibilityElementsHidden = true
+            // Caption text must remain readable by VoiceOver. The overlay itself
+            // ignores touches, so it never intercepts AVKit controls.
+            host.view.accessibilityElementsHidden = false
             host.safeAreaRegions = []
             host.view.frame = overlay.bounds
             host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]

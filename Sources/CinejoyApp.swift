@@ -7,12 +7,22 @@ import SwiftUI
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            launchView
                 .environment(library)
                 .environment(catalog)
                 .tint(Color("AccentColor"))
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
+    }
+
+    @ViewBuilder private var launchView: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CINEJOY_CAPTION_QA"] == "1" {
+            CaptionQAScreen()
+        } else { RootView() }
+        #else
+        RootView()
+        #endif
     }
 }
 
