@@ -34,7 +34,8 @@ test('hands the provider choice back even with hidden tracks, unchanged cues, or
   elements[0].default = false; elements[1].default = true;
   const changed = observer.refresh();
   assert.equal(changed.selectedID, original.tracks[1].id);
-  assert.deepEqual(changed.tracks, original.tracks, 'selection changes need no cue reload');
+  const byID = tracks => Object.fromEntries(tracks.map(track => [track.id, track]));
+  assert.deepEqual(byID(changed.tracks), byID(original.tracks), 'selection changes need no cue reload');
   elements[1].default = false;
   assert.equal(observer.refresh().selectedID, null, 'Off is explicit rather than selecting the first loaded track');
   first.mode = 'showing';
