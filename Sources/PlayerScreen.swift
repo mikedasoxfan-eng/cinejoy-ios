@@ -517,6 +517,8 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     @ObservationIgnored private var lastDiagnosticTick = -1
     @ObservationIgnored private var startedAt = ContinuousClock.now
     @ObservationIgnored private var stopped = true
+    private let audioOwnerID = UUID()
+    private static var activeAudioOwner: UUID?
     private static let audioQueue = DispatchQueue(label: "local.cinejoy.audio-session", qos: .userInitiated)
 
     var statusLabel: String { isLoading ? "Preparing" : isBuffering ? "Buffering" : isPaused ? "Paused" : "Playing" }
@@ -557,6 +559,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
             self.isSlow = true
         }
         // Activating the audio session is a synchronous IPC; keep it off the main thread.
+        Self.activeAudioOwner = audioOwnerID
         Self.audioQueue.async {
             let audio = AVAudioSession.sharedInstance()
             try? audio.setCategory(.playback, mode: .moviePlayback)
@@ -681,7 +684,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         let second = Int(Date.timeIntervalSinceReferenceDate)
         if second != lastDiagnosticTick, item.status != .failed {
             lastDiagnosticTick = second
-            diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(seconds)) duration=\(Int(duration)) external=\(native.isExternalPlaybackActive) fullscreen=\(isFullScreen) pip=\(isPictureInPicture)"
+            diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(seconds)) duration=\(Int(duration)) path=\(path) external=\(native.isExternalPlaybackActive) fullscreen=\(isFullScreen) pip=\(isPictureInPicture)"
         }
     }
 
@@ -776,7 +779,10 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         isBuffering = false
         isFullScreen = false
         isPictureInPicture = false
-        guard wasRunning else { return }
+        // SwiftUI may mount the next episode before dismantling the previous
+        // resolver. Its late cleanup must not deactivate the new audio session.
+        guard wasRunning, Self.activeAudioOwner == audioOwnerID else { return }
+        Self.activeAudioOwner = nil
         Self.audioQueue.async {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }

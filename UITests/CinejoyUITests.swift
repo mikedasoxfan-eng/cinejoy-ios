@@ -140,6 +140,20 @@ final class CinejoyUITests: XCTestCase {
         // The portrait player lists the season from the episode cache the detail screen filled.
         XCTAssertTrue(app.buttons["Now playing: episode 1, Seven Thirty-Seven"].waitForExistence(timeout: 10),
                       "Up next shows the current season with the playing episode marked")
+        let nextEpisode = app.buttons["Play episode 2, Grilled"]
+        XCTAssertTrue(nextEpisode.waitForExistence(timeout: 5))
+        for _ in 0..<3 {
+            if nextEpisode.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(nextEpisode.isHittable)
+        nextEpisode.tap()
+        let switched = NSPredicate(format: "value CONTAINS %@", "path=/watch/tv/1396/2/2")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: switched, object: close)], timeout: 60), .completed,
+                       "Up Next opens the requested episode in a fresh session")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 15), .completed,
+                       "The next episode advances after the previous session is dismantled")
+        capture("10c-next-tv-episode-player", app)
     }
 
     /// AVKit's own fullscreen must keep the same AVPlayer: time keeps advancing through

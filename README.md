@@ -42,7 +42,8 @@ Use `-RunId <id>` to select a specific build. No signing credentials are handled
 by the downloader.
 
 On a persistent Mac, subsequent `bash tools/build.sh` calls reuse DerivedData,
-unchanged source timestamps, generated artwork and the compiled HLS checks.
+unchanged source timestamps and the compiled HLS checks. The exact verified
+favicon PNG is included in source, so code edits do not rerun its Swift renderer.
 Codemagic's IPA workflow retains this cache between runs; GitHub's current
 hosted workflow starts with a fresh Mac. `dist/build-metrics.json` and the build
 log record actual compile and package times.
@@ -53,6 +54,8 @@ same workflow at a `qa/player*` branch for movie/fullscreen/TV checks, or a
 captures. Both branches can point to the exact same app commit. Manual dispatch
 at `main` runs the entire suite. On a Mac, `CINEJOY_QA_FOCUS=player` or
 `CINEJOY_QA_FOCUS=interface` selects the same subsets.
+Manual GitHub QA also starts Simulator boot during the device build, overlapping
+the first-boot setup with compilation.
 
 ## Build with Codemagic
 

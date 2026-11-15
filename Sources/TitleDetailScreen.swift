@@ -227,6 +227,7 @@ struct TitleDetailScreen: View {
     @MainActor private func loadEpisodes(force: Bool = false) async {
         let token = UUID()
         loadToken = token
+        isLoadingEpisodes = false
         episodeError = nil
         episodeDiagnostic = ""
         let cached = catalog.cachedEpisodes(for: title, season: season)
