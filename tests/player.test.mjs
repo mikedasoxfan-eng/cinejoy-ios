@@ -89,3 +89,73 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   assert.match(messages[0].networkTrace, /mse=0 mms=1 .*guards=11 src=none/);
   assert.equal(messages[0].networkTrace.includes('https://'), false, 'capability diagnostics contain no stream URL');
 });
+
+test('pending initial playback crosses only a small actual buffered-start gap once per source', () => {
+  const script = readFileSync(new URL('../Resources/PlayerIntegration.js', import.meta.url), 'utf8')
+    .replace('__RESUME_SECONDS__', '0');
+  const setup = ({start, end = 3.8, ready = 1, current = 0, length = 1}) => {
+    let tick;
+    let clock = 1000;
+    let plays = 0;
+    const listeners = {};
+    const messages = [];
+    const range = {start, end, length};
+    const video = {
+      currentTime: current, duration: 8888, readyState: ready, paused: true,
+      currentSrc: 'blob:https://cinejoy.pk/test-source',
+      buffered: {get length() { return range.length; }, start: () => range.start, end: () => range.end},
+      getAttribute() { return this.currentSrc; }, setAttribute() {},
+      play() { plays++; this.paused = false; return new Promise(() => {}); },
+    };
+    vm.runInNewContext(script, {
+      document: {
+        visibilityState: 'visible', createElement: () => ({}), head: {append() {}},
+        addEventListener: (name, fn) => { listeners[name] = fn; },
+        querySelectorAll: () => [], querySelector: selector => selector === 'video' ? video : {click() {}},
+      },
+      window: {webkit: {messageHandlers: {watch: {postMessage: message => messages.push(message)}}}},
+      location: {pathname: '/watch/movie/27205'}, HTMLVideoElement: Object,
+      Date: {now: () => clock += 1001}, setInterval: fn => { tick = fn; },
+    });
+    return {tick: () => tick(), video, range, listeners, messages, plays: () => plays};
+  };
+
+  const gap = setup({start: 0.125125});
+  gap.tick();
+  assert.equal(gap.video.currentTime, 0.125125);
+  assert.equal(gap.plays(), 1);
+  assert.match(gap.messages[0].networkTrace, /range=0\.125125:3\.8 visibility=visible/);
+  assert.equal(gap.messages[0].seconds, 0, 'report the actual clock before the real seek');
+  gap.tick();
+  assert.equal(gap.messages[1].seconds, 0.125125, 'report the actual clock after the seek');
+  gap.video.currentTime = 0;
+  gap.tick();
+  assert.equal(gap.video.currentTime, 0, 'do not repeat the startup seek on the same source');
+  gap.video.currentSrc = 'blob:https://cinejoy.pk/replacement-source';
+  gap.tick();
+  assert.equal(gap.video.currentTime, 0.125125, 'a new source gets its own initial-gap check');
+
+  for (const settings of [
+    {start: 0}, {start: 0.125125, length: 0}, {start: 3.1},
+    {start: 0.125125, ready: 2}, {start: Infinity}, {start: 0.125125, end: 0},
+    {start: 0.125125, current: 42},
+  ]) {
+    const run = setup(settings);
+    run.tick();
+    assert.equal(run.video.currentTime, settings.current || 0, JSON.stringify(settings));
+  }
+
+  const played = setup({start: 0});
+  played.tick();
+  played.listeners.playing({target: played.video});
+  played.range.start = 0.5;
+  played.tick();
+  assert.equal(played.video.currentTime, 0, 'never normalize the clock after real playback began');
+  const paused = setup({start: 0});
+  paused.tick();
+  paused.video.paused = true;
+  paused.range.start = 0.5;
+  paused.tick();
+  assert.equal(paused.video.currentTime, 0, 'preserve a user pause while the initial request is pending');
+  assert.equal(paused.plays(), 1);
+});

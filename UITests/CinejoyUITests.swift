@@ -27,6 +27,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Cinejoy"].waitForExistence(timeout: 15))
         capture("01-home", app)
 
+        app.tabBars.buttons["Library"].tap()
+        XCTAssertTrue(app.staticTexts["A little movie-night planning"].waitForExistence(timeout: 5))
+        capture("01b-library-empty", app)
         app.tabBars.buttons["Browse"].tap()
         XCTAssertTrue(app.navigationBars["Browse"].waitForExistence(timeout: 5))
         capture("02-browse", app)
@@ -40,6 +43,19 @@ final class CinejoyUITests: XCTestCase {
         let save = app.buttons["Save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5))
         capture("03-title-details", app)
+        let share = app.buttons["share-title"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
+        // ShareLink presents the native activity sheet. Only open and dismiss it;
+        // no activity destination or send action is selected.
+        let closeShare = app.buttons["Close"].firstMatch
+        guard closeShare.waitForExistence(timeout: 8) else {
+            capture("03b-share", app)
+            XCTFail("The native share sheet exposes its Close control")
+            return
+        }
+        capture("03b-share", app)
+        closeShare.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
         save.tap()
         XCTAssertTrue(app.buttons["Saved"].waitForExistence(timeout: 5))
 
@@ -56,6 +72,8 @@ final class CinejoyUITests: XCTestCase {
         app.tabBars.buttons["Search"].tap()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Find your next favorite."].waitForExistence(timeout: 5))
+        capture("05a-search-discovery", app)
         search.tap()
         search.typeText("Odyssey")
         XCTAssertTrue(app.buttons["title-movie:1368337"].waitForExistence(timeout: 8))
@@ -102,7 +120,9 @@ final class CinejoyUITests: XCTestCase {
         capture("09-tv-episodes", app)
         seasonMenu.tap()
         let secondSeason = app.buttons["Season 2"]
-        XCTAssertTrue(secondSeason.waitForExistence(timeout: 5)); secondSeason.tap()
+        XCTAssertTrue(secondSeason.waitForExistence(timeout: 5))
+        capture("09b-season-menu", app)
+        secondSeason.tap()
         let episode = app.buttons["episode-/watch/tv/1396/2/1"]
         XCTAssertTrue(episode.waitForExistence(timeout: 30))
         XCTAssertTrue(app.staticTexts["Loading episodes…"].waitForNonExistence(timeout: 5))
@@ -119,6 +139,16 @@ final class CinejoyUITests: XCTestCase {
         }
         capture("10-season-two", app)
         XCTAssertTrue(episode.isHittable, "The loaded season's first episode is visible and usable")
+        episode.tap()
+        let close = app.buttons["Close player"]
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        defer { if close.exists { close.tap() } }
+        let status = app.staticTexts["player-status"]
+        let advancing = NSPredicate(format: "value MATCHES %@", "Playing, ([3-9]|[1-9][0-9]+) seconds elapsed")
+        let playing = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 60) == .completed
+        capture("10b-tv-episode-player", app)
+        XCTAssertTrue(playing, "The selected Season 2 episode really plays")
+        XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
     }
 
     @MainActor func testSettingsAppearance() throws {
@@ -128,6 +158,8 @@ final class CinejoyUITests: XCTestCase {
         app.buttons["Settings"].firstMatch.tap()
         let theme = app.buttons["appearance-picker"]
         XCTAssertTrue(theme.waitForExistence(timeout: 5)); theme.tap()
+        XCTAssertTrue(app.buttons["Dark"].waitForExistence(timeout: 5))
+        capture("13a-theme-menu", app)
         app.buttons["Dark"].tap()
         capture("13-settings-dark", app)
         theme.tap(); app.buttons["Light"].tap()
@@ -190,7 +222,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(clear.waitForExistence(timeout: 5)); XCTAssertTrue(clear.isEnabled)
         clear.tap()
         let confirm = app.buttons["Clear history"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        capture("12c-clear-confirmation", app)
+        confirm.tap()
         app.buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
         capture("12c-cleared-history", app)
@@ -203,12 +237,16 @@ final class CinejoyUITests: XCTestCase {
     }
 
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        // Capture the physical screen. App-element screenshots can crop with a
+        // stale portrait coordinate transform after Simulator rotation.
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        if name.hasPrefix("11-") {
-            let state = XCTAttachment(string: app.buttons["Close player"].value as? String ?? "No media diagnostics")
+        if name.hasPrefix("11-") || name == "10b-tv-episode-player" {
+            let diagnostics = app.buttons["Close player"].value as? String ?? "No media diagnostics"
+            print("Cinejoy media state: \(diagnostics)")
+            let state = XCTAttachment(string: diagnostics)
             state.name = "\(name)-media-state"
             state.lifetime = .keepAlways
             add(state)

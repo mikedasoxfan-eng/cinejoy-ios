@@ -54,7 +54,7 @@ struct TitleDetailScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ShareLink(item: title.siteURL) }
+            ToolbarItem(placement: .topBarTrailing) { ShareLink(item: title.siteURL).accessibilityIdentifier("share-title") }
         }
         .task { info = try? await TitleInfoService.info(for: title) }
         .task(id: season) { if title.isSeries { await loadEpisodes() } }
