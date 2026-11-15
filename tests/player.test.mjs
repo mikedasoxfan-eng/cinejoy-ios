@@ -56,27 +56,42 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   };
   const source = readFileSync(new URL('../Resources/PlayerIntegration.js', import.meta.url), 'utf8')
     .replace('__RESUME_SECONDS__', '42');
+  let clock = 1000;
   vm.runInNewContext(source, {
     document, location: { pathname: '/watch/movie/27205' },
     window: {
       __cinejoyPlayerEnvironment: {mse: false, mms: true, nativeHls: 'maybe', setterGuard: true, removalGuard: true},
       webkit: { messageHandlers: { watch: { postMessage: value => messages.push(value) } } },
     },
+    Date: {now: () => clock += 1001},
     setInterval: fn => { tick = fn; }, HTMLVideoElement: Object,
   });
   tick();
   assert.equal(playCount, 0, 'wait for an attached source');
   assert.equal(video.preload, 'metadata', 'leave the unattached template alone');
-  assert.equal(video.currentTime, 42);
+  assert.equal(video.currentTime, 0, 'metadata readiness must not seek the managed source');
   video.sourceElement = {src: 'blob:https://cinejoy.pk/test-source'};
   tick();
   await Promise.resolve();
   assert.equal(playCount, 1, 'start a managed source child without waiting for currentSrc or a decoded frame');
   assert.equal(video.preload, 'auto', 'request media rather than metadata before the first play');
   assert.equal(controlCount, 1, 'enter through the website playback action as well as the media element');
+  assert.equal(video.currentTime, 0, 'starting playback still defers the saved seek until decoded data');
   video.currentSrc = video.sourceElement.src;
   tick();
   assert.equal(playCount, 1, 'currentSrc adopting the source child does not start it twice');
+  assert.equal(video.currentTime, 0);
+  const metadataReport = messages.at(-1);
+  assert.equal(metadataReport.readyState, 1);
+  assert.equal(metadataReport.paused, false);
+  assert.equal(metadataReport.seconds, 0, 'metadata reports remain truthful and native UI can show Buffering');
+  video.readyState = 2;
+  tick();
+  assert.equal(video.currentTime, 42, 'apply the saved seek once a decoded frame is available');
+  assert.equal(messages.at(-1).seconds, 42, 'the first decoded report contains the actual resumed clock');
+  video.currentTime = 50;
+  tick();
+  assert.equal(video.currentTime, 50, 'do not reapply the saved position after playback progresses');
   video.paused = true;
   tick();
   assert.equal(playCount, 1, 'the polling bridge must not undo a user pause');
@@ -86,7 +101,7 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   assert.equal(playCount, 2, 'a replacement server source can start on the existing video element');
   assert.equal(video.disableRemotePlayback, true);
   assert.equal(video['x-webkit-airplay'], 'deny');
-  assert.equal(messages[0].seconds, 42);
+  assert.equal(messages[0].seconds, 0, 'do not report the saved position before it was really applied');
   assert.equal(messages[0].path, '/watch/movie/27205');
   assert.match(messages[0].networkTrace, /mse=0 mms=1 .*guards=11 src=none/);
   assert.equal(messages[0].networkTrace.includes('https://'), false, 'capability diagnostics contain no stream URL');
