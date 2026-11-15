@@ -1,33 +1,31 @@
-import AppKit
+import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
-// Original Cinejoy artwork: https://cinejoy.pk/favicon.svg
-// Official PNG fallback: https://cinejoy.pk/pwa-512.png
-let source = NSImage(contentsOfFile: "Resources/Brand/favicon.svg")
-    ?? NSImage(contentsOfFile: "Resources/Brand/pwa-512.png")
-guard let source, source.size.width > 0, source.size.height > 0 else {
-    fatalError("Cinejoy favicon could not be loaded")
+// Cinejoy's official high-resolution export of https://cinejoy.pk/favicon.svg
+let input = URL(fileURLWithPath: "Resources/Brand/pwa-512.png")
+guard let source = CGImageSourceCreateWithURL(input as CFURL, nil),
+      let artwork = CGImageSourceCreateImageAtIndex(source, 0, nil),
+      let context = CGContext(data: nil, width: 1024, height: 1024,
+                              bitsPerComponent: 8, bytesPerRow: 4096,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+    fatalError("Cannot render Cinejoy's official favicon")
 }
-let size = 1024
-let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
-                             bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false,
-                             isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-NSGraphicsContext.current?.imageInterpolation = .high
-// Match Cinejoy's manifest background; iOS applies its own corner mask.
-NSColor(calibratedWhite: 5.0 / 255.0, alpha: 1).setFill()
-NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size)).fill()
-let available = 864.0
-let scale = min(available / source.size.width, available / source.size.height)
-let width = source.size.width * scale
-let height = source.size.height * scale
-source.draw(in: NSRect(x: (1024 - width) / 2, y: (1024 - height) / 2, width: width, height: height),
-            from: .zero, operation: .sourceOver, fraction: 1)
-NSGraphicsContext.restoreGraphicsState()
-let data = bitmap.representation(using: .png, properties: [:])!
+// A supported 32-bit opaque Core Graphics context; iOS supplies the corner mask.
+context.setFillColor(CGColor(gray: 5.0 / 255.0, alpha: 1))
+context.fill(CGRect(x: 0, y: 0, width: 1024, height: 1024))
+context.interpolationQuality = .high
+context.draw(artwork, in: CGRect(x: 80, y: 80, width: 864, height: 864))
+guard let image = context.makeImage() else { fatalError("No icon image") }
 for path in [CommandLine.arguments[1], "dist/AppIcon.png"] {
-    let destination = URL(fileURLWithPath: path)
-    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try data.write(to: destination)
+    let url = URL(fileURLWithPath: path)
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+        fatalError("Cannot write favicon icon")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { fatalError("Cannot finish favicon icon") }
 }
-print("Rendered original Cinejoy favicon as a 1024px opaque iOS icon")
+print("Rendered Cinejoy's official favicon at 1024px")
