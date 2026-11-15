@@ -13,10 +13,11 @@ if [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
   case "${GITHUB_REF_NAME:-}" in
     qa/player*) QA_FOCUS=player ;;
     qa/interface*) QA_FOCUS=interface ;;
+    qa/handoff*) QA_FOCUS=handoff ;;
   esac
 fi
 case "$QA_FOCUS" in
-  full|player|interface) ;;
+  full|player|interface|handoff) ;;
   *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;
 esac
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
@@ -37,6 +38,8 @@ if [ "$QA_FOCUS" = player ]; then
     -only-testing:CinejoyUITests/CinejoyUITests/testAVKitFullscreenRoundTripKeepsPlayback
     -only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection
   )
+elif [ "$QA_FOCUS" = handoff ]; then
+  TEST_SELECTION=(-only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection)
 elif [ "$QA_FOCUS" = interface ]; then
   TEST_SELECTION=(
     -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture
@@ -53,7 +56,7 @@ xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug 
   -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
 xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
-if [ "$QA_FOCUS" = player ]; then
+if [ "$QA_FOCUS" = player ] || [ "$QA_FOCUS" = handoff ]; then
   xcrun simctl shutdown "$DEVICE_ID" || true
   exit "$TEST_RESULT"
 fi
