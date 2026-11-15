@@ -191,13 +191,13 @@ final class CinejoyUITests: XCTestCase {
         // The portrait player lists the season from the episode cache the detail screen filled.
         XCTAssertTrue(app.buttons["Now playing: episode 1, Seven Thirty-Seven"].waitForExistence(timeout: 10),
                       "Up next shows the current season with the playing episode marked")
-        let nextEpisode = app.buttons["Play episode 2, Grilled"]
+        let panel = app.scrollViews["player-info-panel"].firstMatch
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "The player's info panel is addressable")
+        let nextEpisode = panel.buttons["Play episode 2, Grilled"].firstMatch
         XCTAssertTrue(nextEpisode.waitForExistence(timeout: 5))
         // Scroll only the portrait info panel (the video stage stays fixed), in short
         // steps toward the row's actual position: up when it is below the panel,
         // down when it is above. Whole-app swipes over-scrolled past it before.
-        let panel = app.scrollViews["player-info-panel"]
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "The player's info panel is addressable")
         for _ in 0..<8 {
             let row = nextEpisode.frame
             let area = panel.frame

@@ -5,7 +5,10 @@ command -v xcodegen >/dev/null || { echo 'Install XcodeGen: brew install xcodege
 BUILD_STARTED=$(date +%s)
 mkdir -p build dist
 if [ "${GITHUB_EVENT_NAME:-}" = workflow_dispatch ] || [ "${CINEJOY_PREWARM_SIMULATOR:-0}" = 1 ]; then
-  bash tools/prewarm_simulator.sh
+  mkdir -p dist/previews
+  # simctl boot itself can block for minutes on a fresh runner. Redirect its
+  # output so the build step can finish even while that process is still alive.
+  bash tools/prewarm_simulator.sh > dist/previews/prewarm.log 2>&1 &
 fi
 python3 tools/restore_build_inputs.py
 bash tools/check_hls_proxy.sh
