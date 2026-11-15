@@ -24,6 +24,12 @@ import SwiftUI
     func read(path: String, season: Int? = nil) async throws -> CatalogPage {
         let requestID = UUID()
         generation = requestID
+        defer {
+            if requestID == generation {
+                webView.stopLoading()
+                webView.loadHTMLString("", baseURL: nil)
+            }
+        }
         guard let url = URL(string: "https://cinejoy.pk\(path)") else { throw URLError(.badURL) }
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 25))
         var last: CatalogPage?
@@ -62,7 +68,7 @@ import SwiftUI
         throw URLError(.timedOut)
     }
 
-    func cancel() { generation = UUID(); webView.stopLoading() }
+    func cancel() { generation = UUID(); webView.stopLoading(); webView.loadHTMLString("", baseURL: nil) }
 }
 
 @MainActor @Observable final class CatalogStore {
@@ -74,9 +80,13 @@ import SwiftUI
 
     init() {
         let cache = URL.cachesDirectory.appending(path: "cinejoy-catalog.json")
-        let source = FileManager.default.fileExists(atPath: cache.path) ? cache : Bundle.main.url(forResource: "CatalogSeed", withExtension: "json")
-        if let source, let data = try? Data(contentsOf: source),
-           let page = try? JSONDecoder().decode(CatalogPage.self, from: data) { shelves = page.shelves }
+        let sources = [cache, Bundle.main.url(forResource: "CatalogSeed", withExtension: "json")].compactMap { $0 }
+        for source in sources {
+            if let data = try? Data(contentsOf: source), let page = try? JSONDecoder().decode(CatalogPage.self, from: data), !page.shelves.isEmpty {
+                shelves = page.shelves
+                break
+            }
+        }
     }
 
     var titles: [Title] {
