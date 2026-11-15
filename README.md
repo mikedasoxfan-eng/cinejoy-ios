@@ -26,6 +26,19 @@ or provisioning profile is stored in this project.
 The GitHub Actions workflow builds the same device IPA and captures Simulator
 screenshots. Download the `Cinejoy-IPA` artifact from the successful run.
 
+## Build with Codemagic
+
+`codemagic.yaml` provides a separate macOS build route. Add this repository in
+[Codemagic](https://codemagic.io/apps) and choose its YAML configuration:
+
+- `ios-ipa` builds the unsigned iPhone IPA and its package-verification report.
+- `ios-simulator-qa` also runs the native UI tests and exports iPhone/iPad captures.
+
+Both workflows use an M2 Mac with Xcode 26.6 and start manually. Download
+`Cinejoy-unsigned.ipa` from the build artifacts and re-sign it for your device.
+Codemagic requires a service sign-in; this project supplies no Apple certificate
+or App Store Connect credentials. The app itself remains account-free.
+
 ## Validate
 
 ```sh
