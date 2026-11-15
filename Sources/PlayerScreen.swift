@@ -43,6 +43,7 @@ struct PlayerScreen: View {
                 Button("Close player", systemImage: "xmark") { dismiss() }
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .buttonStyle(.glass).buttonBorderShape(.circle)
+                    .accessibilityValue(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? diagnostics : "")
                 Spacer()
                 Text(playback.title.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     .padding(.horizontal, 16).padding(.vertical, 12).glassEffect()
@@ -82,6 +83,11 @@ struct PlaybackWebView: UIViewRepresentable {
         configuration.allowsAirPlayForMediaPlayback = false
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(context.coordinator, name: "watch")
+        if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1",
+           let url = Bundle.main.url(forResource: "PlayerDiagnostics", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         if let url = Bundle.main.url(forResource: "PlayerIntegration", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             let script = source.replacingOccurrences(of: "__RESUME_SECONDS__", with: String(playback.resumeSeconds))
@@ -152,7 +158,8 @@ struct PlaybackWebView: UIViewRepresentable {
             owner.onProgress(path, seconds, duration, value["paused"] as? Bool ?? true)
             owner.isLoading = false
             loadingTimeout?.cancel()
-            owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration))"
+            if (value["readyState"] as? Int ?? 0) >= 2 { owner.error = nil }
+            owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration)) \(value["networkTrace"] ?? "")"
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,

@@ -175,5 +175,11 @@ final class CinejoyUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        if name.hasPrefix("11-") {
+            let state = XCTAttachment(string: app.buttons["Close player"].value as? String ?? "No media diagnostics")
+            state.name = "\(name)-media-state"
+            state.lifetime = .keepAlways
+            add(state)
+        }
     }
 }

@@ -16,7 +16,7 @@
     }
     if(Date.now()-lastReport<1000)return;
     lastReport=Date.now();
-    window.webkit.messageHandlers.watch.postMessage({seconds:Number.isFinite(video.currentTime)?video.currentTime:seconds,duration,paused:video.paused,path:location.pathname,readyState:video.readyState,networkState:video.networkState,error:video.error?.code||0,playFailure});
+    window.webkit.messageHandlers.watch.postMessage({seconds:Number.isFinite(video.currentTime)?video.currentTime:seconds,duration,paused:video.paused,path:location.pathname,readyState:video.readyState,networkState:video.networkState,error:video.error?.code||0,playFailure,networkTrace:(window.__cinejoyMediaTrace||[]).join(' | ')});
   };
   document.addEventListener('timeupdate',event=>{if(event.target instanceof HTMLVideoElement)report(event.target)},true);
   setInterval(()=>{
