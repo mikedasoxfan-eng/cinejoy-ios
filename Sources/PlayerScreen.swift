@@ -77,6 +77,7 @@ struct PlayerScreen: View {
                 }
                 .labelStyle(.iconOnly).frame(width: 44, height: 44)
                 .buttonStyle(.glass).buttonBorderShape(.circle)
+                .accessibilityIdentifier("playback-options")
                 Button(library.contains(playback.title) ? "Remove from Library" : "Save to Library",
                        systemImage: library.contains(playback.title) ? "bookmark.fill" : "bookmark") { library.toggle(playback.title) }
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)

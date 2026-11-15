@@ -29,6 +29,8 @@ workflows:
     environment:
       xcode: "26.6"
       node: lts
+      vars:
+        CINEJOY_QA_FOCUS: full
     scripts:
       - name: Prepare XcodeGen
         script: |

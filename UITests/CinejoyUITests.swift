@@ -190,6 +190,23 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progresses, object: status)], timeout: 10), .completed, "Playback continues advancing after the initial report")
         XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
         sleep(8)
+        let options = app.buttons["playback-options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5)); options.tap()
+        capture("11c-native-playback-options", app)
+        let fullHD = app.buttons["Up to 1080p"]
+        if !fullHD.waitForExistence(timeout: 2) {
+            let quality = app.buttons["Maximum quality"]
+            XCTAssertTrue(quality.waitForExistence(timeout: 3)); quality.tap()
+        }
+        XCTAssertTrue(fullHD.waitForExistence(timeout: 3)); fullHD.tap()
+        options.tap()
+        app.buttons["Choose server"].tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
+        capture("11d-source-controls", app)
+        options.tap()
+        let backToVideo = app.buttons["Back to video"]
+        XCTAssertTrue(backToVideo.waitForExistence(timeout: 3)); backToVideo.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "Playing, "), object: status)], timeout: 10), .completed)
         let savedSeconds = elapsed(status)
         XCTAssertGreaterThanOrEqual(savedSeconds, 3)
         app.buttons["Close player"].tap()
