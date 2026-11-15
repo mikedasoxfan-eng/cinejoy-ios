@@ -17,9 +17,16 @@ fi
 cp -p Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png dist/AppIcon.png
 xcodegen generate --use-cache
 COMPILE_STARTED=$(date +%s)
+# Fresh hosted Macs cannot reuse per-file incremental outputs. Whole-module
+# Release compilation avoids repeating macro/type-checking work on cold builds.
+# Persistent Macs retain incremental mode so small edits can reuse their outputs.
+COMPILE_MODE=${CINEJOY_SWIFT_MODE:-incremental}
+if [ "${GITHUB_ACTIONS:-false}" = true ] && [ -z "${CINEJOY_SWIFT_MODE:-}" ]; then
+  COMPILE_MODE=wholemodule
+fi
 xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-  CODE_SIGNING_ALLOWED=NO SWIFT_COMPILATION_MODE=incremental \
+  CODE_SIGNING_ALLOWED=NO SWIFT_COMPILATION_MODE="$COMPILE_MODE" \
   COMPILATION_CACHE_ENABLE_CACHING=YES COMPILER_INDEX_STORE_ENABLE=NO \
   -quiet build
 COMPILE_FINISHED=$(date +%s)
@@ -30,7 +37,7 @@ ditto build/Build/Products/Release-iphoneos/Cinejoy.app dist/Payload/Cinejoy.app
 cp dist/AppIcon.png dist/iTunesArtwork@2x
 (cd dist && zip -q Cinejoy-unsigned.ipa iTunesArtwork@2x)
 python3 tools/verify_ipa.py dist/Cinejoy-unsigned.ipa > dist/verification.json
-export BUILD_STARTED COMPILE_STARTED COMPILE_FINISHED
+export BUILD_STARTED COMPILE_STARTED COMPILE_FINISHED COMPILE_MODE
 python3 tools/build_metrics.py > dist/build-metrics.json
 cat dist/build-metrics.json
 echo "Created $(pwd)/dist/Cinejoy-unsigned.ipa — re-sign with your sideloading tool."

@@ -15,7 +15,7 @@ def main():
         "package_and_checks_seconds": int(time.time()) - compile_finished,
         "total_seconds": int(time.time()) - started,
         "ipa_bytes": Path("dist/Cinejoy-unsigned.ipa").stat().st_size,
-        "configuration": "Release, optimized incremental, unsigned arm64",
+        "configuration": "Release, optimized " + os.environ.get("COMPILE_MODE", "incremental") + ", unsigned arm64",
     }, indent=2))
 
 if __name__ == "__main__":
