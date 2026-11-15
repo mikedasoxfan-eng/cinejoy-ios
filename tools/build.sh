@@ -4,10 +4,10 @@ cd "$(dirname "$0")/.."
 command -v xcodegen >/dev/null || { echo 'Install XcodeGen: brew install xcodegen' >&2; exit 1; }
 BUILD_STARTED=$(date +%s)
 mkdir -p build dist
-if [ "${GITHUB_EVENT_NAME:-}" = workflow_dispatch ] || [ "${CINEJOY_PREWARM_SIMULATOR:-0}" = 1 ]; then
+if [ "${CINEJOY_PREWARM_SIMULATOR:-0}" = 1 ]; then
   mkdir -p dist/previews
-  # simctl boot itself can block for minutes on a fresh runner. Redirect its
-  # output so the build step can finish even while that process is still alive.
+  # Optional only: first-boot Simulator migration contends with Swift compilation
+  # on hosted Macs. The default preview step starts it after the IPA is uploaded.
   bash tools/prewarm_simulator.sh > dist/previews/prewarm.log 2>&1 &
 fi
 python3 tools/restore_build_inputs.py
