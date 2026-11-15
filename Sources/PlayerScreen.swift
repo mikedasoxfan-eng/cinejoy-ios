@@ -135,7 +135,7 @@ struct PlaybackWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                     decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
             // Provider frames are allowed; top-level navigation stays in the player.
             if action.targetFrame?.isMainFrame == false { decisionHandler(.allow); return }

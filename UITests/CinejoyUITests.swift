@@ -89,7 +89,7 @@ final class CinejoyUITests: XCTestCase {
         capture("10-season-two", app)
     }
 
-    @MainActor func testSettingsAppearanceAndHistoryDeletion() throws {
+    @MainActor func testSettingsAppearance() throws {
         let app = XCUIApplication()
         app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
         app.launch()
@@ -134,6 +134,7 @@ final class CinejoyUITests: XCTestCase {
         capture("11b-player-landscape", app)
         XCUIDevice.shared.orientation = .portrait
         let savedSeconds = elapsed(status)
+        XCTAssertGreaterThanOrEqual(savedSeconds, 3)
         app.buttons["Close player"].tap()
         app.tabBars.buttons["Library"].tap()
         app.segmentedControls.buttons["History"].tap()
@@ -160,7 +161,8 @@ final class CinejoyUITests: XCTestCase {
 
     @MainActor private func elapsed(_ element: XCUIElement) -> Int {
         let value = element.value as? String ?? ""
-        return Int(value.replacingOccurrences(of: "Playing, ", with: "").replacingOccurrences(of: " seconds elapsed", with: "")) ?? -1
+        let time = value.components(separatedBy: ", ").last ?? ""
+        return Int(time.components(separatedBy: " ").first ?? "") ?? -1
     }
 
     @MainActor private func capture(_ name: String, _ app: XCUIApplication) {
