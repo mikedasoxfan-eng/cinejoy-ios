@@ -1,28 +1,33 @@
 import AppKit
 
+// Original Cinejoy artwork: https://cinejoy.pk/favicon.svg
+// Official PNG fallback: https://cinejoy.pk/pwa-512.png
+let source = NSImage(contentsOfFile: "Resources/Brand/favicon.svg")
+    ?? NSImage(contentsOfFile: "Resources/Brand/pwa-512.png")
+guard let source, source.size.width > 0, source.size.height > 0 else {
+    fatalError("Cinejoy favicon could not be loaded")
+}
 let size = 1024
 let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
-                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                             bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false,
                              isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-NSColor(calibratedRed: 0.025, green: 0.04, blue: 0.03, alpha: 1).setFill()
+NSGraphicsContext.current?.imageInterpolation = .high
+// Match Cinejoy's manifest background; iOS applies its own corner mask.
+NSColor(calibratedWhite: 5.0 / 255.0, alpha: 1).setFill()
 NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size)).fill()
-let green = NSColor(calibratedRed: 0.584, green: 1, blue: 0.314, alpha: 1)
-green.setStroke()
-let frame = NSBezierPath(roundedRect: NSRect(x: 210, y: 240, width: 604, height: 544), xRadius: 100, yRadius: 100)
-frame.lineWidth = 38
-frame.stroke()
-green.setFill()
-for x in stride(from: 300, through: 720, by: 140) {
-    NSBezierPath(roundedRect: NSRect(x: x, y: 706, width: 62, height: 28), xRadius: 8, yRadius: 8).fill()
-}
-let play = NSBezierPath()
-play.move(to: NSPoint(x: 430, y: 360))
-play.line(to: NSPoint(x: 650, y: 500))
-play.line(to: NSPoint(x: 430, y: 640))
-play.close()
-play.fill()
+let available = 864.0
+let scale = min(available / source.size.width, available / source.size.height)
+let width = source.size.width * scale
+let height = source.size.height * scale
+source.draw(in: NSRect(x: (1024 - width) / 2, y: (1024 - height) / 2, width: width, height: height),
+            from: .zero, operation: .sourceOver, fraction: 1)
 NSGraphicsContext.restoreGraphicsState()
-let destination = CommandLine.arguments[1]
-try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: destination))
+let data = bitmap.representation(using: .png, properties: [:])!
+for path in [CommandLine.arguments[1], "dist/AppIcon.png"] {
+    let destination = URL(fileURLWithPath: path)
+    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: destination)
+}
+print("Rendered original Cinejoy favicon as a 1024px opaque iOS icon")

@@ -21,6 +21,7 @@ workflows:
     artifacts:
       - dist/Cinejoy-unsigned.ipa
       - dist/verification.json
+      - dist/AppIcon.png
 
   ios-simulator-qa:
     name: Cinejoy iPhone and iPad Simulator QA
@@ -46,6 +47,7 @@ workflows:
     artifacts:
       - dist/Cinejoy-unsigned.ipa
       - dist/verification.json
+      - dist/AppIcon.png
       - dist/previews/**
 
   ios-player-qa:
@@ -74,4 +76,5 @@ workflows:
     artifacts:
       - dist/Cinejoy-unsigned.ipa
       - dist/verification.json
+      - dist/AppIcon.png
       - dist/previews/**
