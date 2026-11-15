@@ -93,7 +93,6 @@ struct TitleGrid: View {
 struct FeaturedTitle: View {
     let title: Title
     @Environment(LibraryStore.self) private var library
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
       Group {
@@ -128,7 +127,7 @@ struct FeaturedTitle: View {
                     layout {
                         Button("Play", systemImage: "play.fill") { library.play(title) }
                             .buttonStyle(.glassProminent).controlSize(.large)
-                            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+                            .foregroundStyle(.black)
                             .lineLimit(1)
                         NavigationLink(value: title) { Label("Details", systemImage: "info.circle") }
                             .buttonStyle(.glass).controlSize(.large)
@@ -137,6 +136,7 @@ struct FeaturedTitle: View {
                 }
             }
             .foregroundStyle(.white)
+            .environment(\.colorScheme, .dark)
     }
 }
 
