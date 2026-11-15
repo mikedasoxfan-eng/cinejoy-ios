@@ -36,6 +36,8 @@ xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug 
   -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
 xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
+# Release the iPhone runtime before starting an iPad on the hosted runner.
+xcrun simctl shutdown "$DEVICE_ID" || true
 IPAD_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPad" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
