@@ -36,8 +36,9 @@ bash tools/preview.sh
 
 The DOM-extraction tests use retained public-page HTML fixtures generated locally
 from the REA captures; no account credentials are present. Simulator captures
-cover light/dark appearance and accessibility text. Actual streaming, AirPlay,
+cover light/dark appearance and accessibility text. Actual streaming,
 picture-in-picture and sideloading need verification on an iOS device.
+AirPlay and remote playback are disabled, and the casting control is removed.
 
 ## Data
 

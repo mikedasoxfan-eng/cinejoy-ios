@@ -66,7 +66,7 @@ struct PlaybackWebView: UIViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = true
-        configuration.allowsAirPlayForMediaPlayback = true
+        configuration.allowsAirPlayForMediaPlayback = false
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(context.coordinator, name: "watch")
         if let url = Bundle.main.url(forResource: "PlayerIntegration", withExtension: "js"),

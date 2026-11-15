@@ -18,6 +18,8 @@ No registration, profile, login or remote personal-state synchronization.
 Saved titles and playback positions are persisted only in Application Support.
 WebKit sessions are ephemeral. Playback uses the existing Cinejoy player;
 browsing, discovery, details, seasons and library UI are SwiftUI.
+AirPlay and remote playback are disabled; there is no casting control or local
+network permission prompt.
 
 Content is real captured catalog metadata plus live extraction from Cinejoy's
 public pages. No TMDB key, account credential, resolver key or crypto protocol
