@@ -59,6 +59,7 @@ struct BrowseScreen: View {
 struct SearchScreen: View {
     @Environment(CatalogStore.self) private var catalog
     @State private var query = ""
+    @State private var searchIsPresented = false
     @State private var results: [Title] = []
     @State private var isLoading = false
     @State private var error: String?
@@ -86,7 +87,8 @@ struct SearchScreen: View {
             }
         }
         .navigationTitle("Search")
-        .searchable(text: $query, prompt: "Movies and TV shows")
+        .searchable(text: $query, isPresented: $searchIsPresented, prompt: "Movies and TV shows")
+        .onSubmit(of: .search) { searchIsPresented = false }
         .scrollDismissesKeyboard(.interactively)
         .task(id: query) {
             do { try await Task.sleep(for: .milliseconds(450)); try Task.checkCancellation(); await search() }

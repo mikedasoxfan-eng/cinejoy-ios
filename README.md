@@ -6,7 +6,7 @@ tab, glass playback controls and a resume accessory. No accounts or cloud librar
 
 The native catalog reads Cinejoy's public rendered pages. Streaming uses Cinejoy's
 existing player inside WebKit; the stream resolver is not copied. A bundled
-snapshot of 130 real titles provides immediate content while live data loads.
+snapshot of 131 real titles provides immediate content while live data loads.
 This is an independent personal-use client, not an official Cinejoy release.
 
 ## Build an IPA

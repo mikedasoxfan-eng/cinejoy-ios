@@ -39,7 +39,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-movie:1368337"].waitForExistence(timeout: 8))
         capture("05-native-search", app)
 
-        app.buttons["Settings"].firstMatch.tap()
+        if app.keyboards.buttons["Search"].exists { app.keyboards.buttons["Search"].tap() }
+        let settings = app.buttons["Settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         capture("06-settings", app)
         XCTAssertFalse(app.buttons["Log in"].exists)
@@ -58,7 +60,7 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-movie:27205"].waitForExistence(timeout: 30))
         capture("07-live-search", app)
         field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 9) + "zzzzcinejoynomatch999")
-        XCTAssertTrue(app.staticTexts["No Results"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'No Results'")).firstMatch.waitForExistence(timeout: 30))
         capture("08-search-empty", app)
     }
 

@@ -24,12 +24,14 @@ xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-accessibility.png
 xcrun simctl ui "$DEVICE_ID" content_size large
 xcrun simctl ui "$DEVICE_ID" appearance dark
 xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass || true
+TEST_RESULT=0
 xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build \
   -resultBundlePath build/UITests.xcresult -only-testing:CinejoyUITests \
   -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-  CODE_SIGNING_ALLOWED=NO
-xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests
+  -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
+  -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
+xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
 IPAD_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPad" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
@@ -40,3 +42,4 @@ if [ -n "$IPAD_ID" ]; then
   sleep 10
   xcrun simctl io "$IPAD_ID" screenshot dist/previews/ipad-home-dark.png
 fi
+exit "$TEST_RESULT"
