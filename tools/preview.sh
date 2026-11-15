@@ -2,11 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist/previews
-xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
-  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
-  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 test -n "$DEVICE_ID"
+xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug \
+  -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build \
+  ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
 xcrun simctl boot "$DEVICE_ID" || true
 xcrun simctl bootstatus "$DEVICE_ID" -b
 xcrun simctl install "$DEVICE_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
