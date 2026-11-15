@@ -32,6 +32,10 @@ import SwiftUI
             try Task.checkCancellation()
             guard requestID == generation else { throw CancellationError() }
             guard let current = webView.url, current.path == url.path, current.query == url.query, attempt >= 3 else { continue }
+            if path.hasPrefix("/search"), url.query != nil {
+                let stillShowingSuggestions = (try? await webView.evaluateJavaScript("[...document.querySelectorAll('h2')].some(h=>h.textContent.trim()==='Trending Today')")) as? Bool
+                if stillShowingSuggestions == true { continue }
+            }
             if let season, attempt > 4 {
                 let script = """
                 (()=>{const wanted='Season \(season)';const heading=[...document.querySelectorAll('h2 button')].find(x=>/^Season \\d+$/.test(x.textContent.trim()));if(heading?.textContent.trim()===wanted)return;const choice=[...document.querySelectorAll('button,[role=option],[role=menuitem]')].find(x=>x.textContent.trim()===wanted);if(choice)choice.click();else heading?.click()})()
@@ -69,8 +73,9 @@ import SwiftUI
     private var didLoad = false
 
     init() {
-        if let url = Bundle.main.url(forResource: "CatalogSeed", withExtension: "json"),
-           let data = try? Data(contentsOf: url),
+        let cache = URL.cachesDirectory.appending(path: "cinejoy-catalog.json")
+        let source = FileManager.default.fileExists(atPath: cache.path) ? cache : Bundle.main.url(forResource: "CatalogSeed", withExtension: "json")
+        if let source, let data = try? Data(contentsOf: source),
            let page = try? JSONDecoder().decode(CatalogPage.self, from: data) { shelves = page.shelves }
     }
 
@@ -88,6 +93,9 @@ import SwiftUI
             let page = try await reader.read(path: "/")
             if !page.shelves.isEmpty { shelves = page.shelves }
             else if !page.titles.isEmpty { shelves = [Shelf(name: "Discover", titles: page.titles)] }
+            if let data = try? JSONEncoder().encode(page) {
+                try? data.write(to: URL.cachesDirectory.appending(path: "cinejoy-catalog.json"), options: .atomic)
+            }
             didLoad = true
         } catch is CancellationError {} catch {
             self.error = "Live catalog unavailable. Your last catalog is still here. Pull to try again."

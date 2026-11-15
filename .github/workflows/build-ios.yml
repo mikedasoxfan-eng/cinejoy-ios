@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Verify catalog adapter
+        run: npm ci --ignore-scripts && npm test
       - name: Prepare Xcode
         run: |
           xcodebuild -version

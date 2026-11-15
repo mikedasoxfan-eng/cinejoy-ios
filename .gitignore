@@ -7,3 +7,4 @@ xcuserdata/
 .taste-skill/
 Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 __pycache__/
+node_modules/
