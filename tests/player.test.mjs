@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('Apple native-HLS support selects the native path and other engines retain MediaSource', () => {
+  const source = readFileSync(new URL('../Resources/PlayerEnvironment.js', import.meta.url), 'utf8');
+  for (const native of [true, false]) {
+    const MediaSource = class {};
+    const window = { MediaSource, ManagedMediaSource: MediaSource };
+    vm.runInNewContext(source, {window, document: {createElement: () => ({canPlayType: () => native ? 'maybe' : ''})}});
+    assert.equal(window.MediaSource, native ? undefined : MediaSource);
+    assert.equal(window.ManagedMediaSource, native ? undefined : MediaSource);
+  }
+});
+
 test('native Play starts metadata-only media, resumes progress and respects a later pause', async () => {
   let tick;
   let playCount = 0;

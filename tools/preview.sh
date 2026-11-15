@@ -45,7 +45,7 @@ if [ -n "$IPAD_ID" ]; then
   xcrun simctl install "$IPAD_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$IPAD_ID" local.cinejoy.glass -appearance dark
-  sleep 10
+  sleep 20
   xcrun simctl io "$IPAD_ID" screenshot dist/previews/ipad-home-dark.png
 fi
 exit "$TEST_RESULT"

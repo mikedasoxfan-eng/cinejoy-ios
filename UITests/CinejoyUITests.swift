@@ -79,13 +79,18 @@ final class CinejoyUITests: XCTestCase {
         let title = app.buttons["title-tv:1396"]
         XCTAssertTrue(title.waitForExistence(timeout: 8)); title.tap()
         app.swipeUp()
-        let seasonMenu = app.buttons["Season 1"]
+        let seasonMenu = app.buttons["season-picker"]
         XCTAssertTrue(seasonMenu.waitForExistence(timeout: 30))
         capture("09-tv-episodes", app)
         seasonMenu.tap()
         let secondSeason = app.buttons["Season 2"]
         XCTAssertTrue(secondSeason.waitForExistence(timeout: 5)); secondSeason.tap()
-        XCTAssertTrue(app.buttons["Play episode 1, Seven Thirty-Seven"].waitForExistence(timeout: 30))
+        let episode = app.buttons["episode-/watch/tv/1396/2/1"]
+        XCTAssertTrue(episode.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["Loading episodes…"].waitForNonExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(episode.isHittable, "The loaded season's first episode is visible and usable")
+        XCTAssertEqual(episode.label, "Play episode 1, Seven Thirty-Seven")
         capture("10-season-two", app)
     }
 

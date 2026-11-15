@@ -81,6 +81,7 @@ struct TitleDetailScreen: View {
                         }
                     } label: { Label("Season \(season)", systemImage: "chevron.down") }
                         .buttonStyle(.glass)
+                        .accessibilityIdentifier("season-picker")
                         .accessibilityValue(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? episodeDiagnostic : "")
                 } else { Text("Season \(season)").foregroundStyle(.secondary) }
             }
@@ -101,6 +102,7 @@ struct TitleDetailScreen: View {
                     }.contentShape(.rect)
                 }.buttonStyle(.plain)
                     .accessibilityLabel("Play episode \(episode.number), \(episode.name)")
+                    .accessibilityIdentifier("episode-\(episode.path)")
             }
         }.padding(.top, 8)
     }

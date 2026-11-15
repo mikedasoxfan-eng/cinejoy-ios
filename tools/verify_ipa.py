@@ -30,7 +30,7 @@ with zipfile.ZipFile(ipa) as archive:
     assert info["MinimumOSVersion"].startswith("26."), "Unexpected minimum iOS version"
     assert "NSLocalNetworkUsageDescription" not in info, "Local-network permission was not removed"
     assert info.get("UIBackgroundModes") == ["audio"], "Media background mode is missing"
-    for resource in ["CatalogSeed.json", "CatalogExtraction.js", "PlayerIntegration.js", "PlayerDiagnostics.js", "Assets.car"]:
+    for resource in ["CatalogSeed.json", "CatalogExtraction.js", "PlayerEnvironment.js", "PlayerIntegration.js", "PlayerDiagnostics.js", "Assets.car"]:
         assert root + resource in archive.namelist(), f"Missing packaged resource: {resource}"
     script = archive.read(root + "PlayerIntegration.js").decode()
     assert "disableRemotePlayback=true" in script and "x-webkit-airplay" in script

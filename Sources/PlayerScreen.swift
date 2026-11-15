@@ -85,6 +85,10 @@ struct PlaybackWebView: UIViewRepresentable {
         configuration.allowsAirPlayForMediaPlayback = false
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(context.coordinator, name: "watch")
+        if let url = Bundle.main.url(forResource: "PlayerEnvironment", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1",
            let url = Bundle.main.url(forResource: "PlayerDiagnostics", withExtension: "js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
