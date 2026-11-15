@@ -817,7 +817,7 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
         controller.player = nil
     }
 
-    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, @MainActor AVPlayerViewControllerDelegate {
         let session: NativePlaybackSession
         var captionHost: UIHostingController<NativeCaptionLayer>?
 
