@@ -94,33 +94,49 @@ struct FeaturedTitle: View {
     let title: Title
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
-        GeometryReader { geometry in
+      Group {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 0) {
+                GeometryReader { geometry in
+                    Artwork(url: title.heroURL).frame(width: geometry.size.width, height: 260)
+                }.frame(height: 260)
+                details.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(.black)
+            }.clipShape(.rect(cornerRadius: 30))
+        } else {
+          GeometryReader { geometry in
           ZStack(alignment: .bottomLeading) {
             Artwork(url: title.heroURL).frame(width: geometry.size.width, height: geometry.size.height)
-            LinearGradient(colors: [.clear, .black.opacity(0.12), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 12) {
-                Text(title.name).font(.largeTitle.bold()).lineLimit(2)
-                Text([title.year, title.isSeries ? "Series" : "Movie", title.rating.isEmpty ? nil : "★ \(title.rating)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.85))
-                GlassEffectContainer(spacing: 12) {
-                    HStack(spacing: 12) {
-                        Button("Play", systemImage: "play.fill") { library.play(title) }
-                            .buttonStyle(.glassProminent).controlSize(.large)
-                            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
-                        NavigationLink(value: title) { Label("Details", systemImage: "info.circle") }
-                            .buttonStyle(.glass).controlSize(.large)
-                    }
-                }
-            }
-            .foregroundStyle(.white).padding(24)
-            .frame(width: geometry.size.width, alignment: .leading)
+            LinearGradient(colors: [.clear, .black.opacity(0.45), .black.opacity(0.96)], startPoint: .top, endPoint: .bottom)
+            details.padding(24).frame(width: geometry.size.width, alignment: .leading)
           }
           .frame(width: geometry.size.width, height: geometry.size.height)
           .clipShape(.rect(cornerRadius: 30))
+          }.frame(height: 440)
         }
-        .frame(height: 440)
-        .padding(.horizontal, 16)
+      }.padding(.horizontal, 16)
+    }
+
+    private var details: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title.name).font(.largeTitle.bold()).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                Text([title.year, title.isSeries ? "Series" : "Movie", title.rating.isEmpty ? nil : "★ \(title.rating)"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                GlassEffectContainer(spacing: 12) {
+                    let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                    layout {
+                        Button("Play", systemImage: "play.fill") { library.play(title) }
+                            .buttonStyle(.glassProminent).controlSize(.large)
+                            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+                            .lineLimit(1)
+                        NavigationLink(value: title) { Label("Details", systemImage: "info.circle") }
+                            .buttonStyle(.glass).controlSize(.large)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .foregroundStyle(.white)
     }
 }
 

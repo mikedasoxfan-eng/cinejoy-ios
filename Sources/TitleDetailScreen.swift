@@ -4,6 +4,7 @@ struct TitleDetailScreen: View {
     let title: Title
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var info: SupplementalInfo?
     @State private var episodes: [Episode] = []
     @State private var seasons: [Int] = [1]
@@ -24,21 +25,18 @@ struct TitleDetailScreen: View {
                     .padding(.horizontal, 16)
                 VStack(alignment: .leading, spacing: 18) {
                     Text(title.name).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 10) {
-                        Text(title.year)
-                        Text(title.isSeries ? "TV Show" : "Movie")
-                        if let runtime = info?.runtime, runtime > 0 { Text("\(runtime / 60)h \(runtime % 60)m") }
-                        if let rating = info?.content_rating { Text(rating) }
-                    }
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    Text(metadata).font(.subheadline).foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
                     GlassEffectContainer(spacing: 12) {
-                        HStack(spacing: 12) {
+                        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                        layout {
                             Button("Play", systemImage: "play.fill") { library.play(title) }
                                 .buttonStyle(.glassProminent).controlSize(.large)
                                 .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+                                .lineLimit(1)
                             Button(library.contains(title) ? "Saved" : "Save", systemImage: library.contains(title) ? "bookmark.fill" : "bookmark") { library.toggle(title) }
                                 .buttonStyle(.glass).controlSize(.large)
+                                .lineLimit(1)
                                 .contentTransition(.symbolEffect(.replace))
                         }
                     }
@@ -61,6 +59,13 @@ struct TitleDetailScreen: View {
         .task(id: season) { if title.isSeries { await loadEpisodes() } }
         .sensoryFeedback(.selection, trigger: library.contains(title))
         .background { ReaderHost(reader: reader).frame(width: 430, height: 932).opacity(0.001).allowsHitTesting(false).accessibilityHidden(true) }
+    }
+
+    private var metadata: String {
+        var parts = [title.year, title.isSeries ? "TV Show" : "Movie"]
+        if let runtime = info?.runtime, runtime > 0 { parts.append("\(runtime / 60)h \(runtime % 60)m") }
+        if let rating = info?.content_rating { parts.append(rating) }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private var episodeSection: some View {
