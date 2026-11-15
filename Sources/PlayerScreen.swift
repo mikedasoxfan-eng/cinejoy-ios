@@ -94,6 +94,7 @@ struct PlaybackWebView: UIViewRepresentable {
         view.backgroundColor = .black
         view.scrollView.backgroundColor = .black
         view.scrollView.isScrollEnabled = false
+        context.coordinator.startTimeout()
         view.load(URLRequest(url: URL(string: "https://cinejoy.pk\(playback.path)")!))
         return view
     }
@@ -101,6 +102,7 @@ struct PlaybackWebView: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) { context.coordinator.owner = self }
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.loadingTimeout?.cancel()
         view.configuration.userContentController.removeScriptMessageHandler(forName: "watch")
         view.stopLoading()
         view.loadHTMLString("", baseURL: nil)
@@ -111,9 +113,21 @@ struct PlaybackWebView: UIViewRepresentable {
 
     @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var owner: PlaybackWebView
+        var loadingTimeout: Task<Void, Never>?
         init(_ owner: PlaybackWebView) { self.owner = owner }
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { owner.isLoading = false }
+        func startTimeout() {
+            loadingTimeout = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(45))
+                guard !Task.isCancelled, let self, owner.isLoading else { return }
+                owner.isLoading = false
+                owner.error = "The player did not load. Check your connection and try again."
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            owner.diagnostics = "Loaded \(webView.url?.host ?? "")\(webView.url?.path ?? "")"
+        }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -136,6 +150,8 @@ struct PlaybackWebView: UIViewRepresentable {
                   seconds.isFinite, duration.isFinite, seconds >= 0, duration >= 0,
                   let path = value["path"] as? String, path.hasPrefix("/watch/") else { return }
             owner.onProgress(path, seconds, duration, value["paused"] as? Bool ?? true)
+            owner.isLoading = false
+            loadingTimeout?.cancel()
             owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration))"
         }
 
@@ -144,9 +160,15 @@ struct PlaybackWebView: UIViewRepresentable {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
             // Provider frames are allowed; top-level navigation stays in the player.
             if action.targetFrame?.isMainFrame == false { decisionHandler(.allow); return }
-            if url.scheme == "about" || (url.scheme == "https" && url.host == "cinejoy.pk" && url.path.hasPrefix("/watch/")) {
+            let sameSite = url.scheme == "https" && url.host == "cinejoy.pk"
+            let playerLink = url.path.hasPrefix("/watch/")
+            let automaticNavigation = action.navigationType != .linkActivated
+            if url.scheme == "about" || (sameSite && (playerLink || automaticNavigation)) {
                 decisionHandler(.allow)
-            } else { decisionHandler(.cancel) }
+            } else {
+                owner.diagnostics = "Blocked navigation \(url.host ?? "")\(url.path)"
+                decisionHandler(.cancel)
+            }
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

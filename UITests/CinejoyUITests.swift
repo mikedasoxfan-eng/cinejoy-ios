@@ -43,9 +43,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["title-movie:1368337"].waitForExistence(timeout: 8))
         capture("05-native-search", app)
 
-        if app.keyboards.buttons["Search"].exists { app.keyboards.buttons["Search"].tap() }
+        search.typeText("\n")
         let settings = app.buttons["Settings"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         capture("06-settings", app)
         XCTAssertFalse(app.buttons["Log in"].exists)

@@ -71,6 +71,31 @@ Later test output and screenshots determine the final statuses. A successful
 compile does not establish successful streaming. Physical-device sideloading,
 hardware decoding and picture-in-picture remain separate from Simulator QA.
 
+## Latest findings and pending checks
+
+Full native artifacts from run `43677955410` are retained locally under
+`dist/previews-navigation-review`. Light Settings, Arrival live results,
+no-results, empty History and episode overlay contrast were visually reviewed.
+The Home light capture was reopened individually and its title, metadata and
+both actions are present. Previous runs verified saved-title persistence after
+a full app relaunch. A later navigation test exposed inconsistent keyboard-submit
+automation; the test now sends Return to the focused search field directly.
+
+Playback and season 2 did **not** pass that native run. Playback was black below
+native chrome and stayed at the initial paused-zero status. Season 2 showed an
+error with no stale season 1 rows. Landscape, resume, and deletion after real
+playback remain unverified because the playback assertion stopped first.
+
+The pending candidate starts metadata-only video once per attached source,
+invokes the site's actual Play action, and reports media readiness and errors to
+test-only accessibility hints. It allows the site's automatic navigation during
+player startup and keeps a native loading/error state until video content exists.
+The catalog backing page uses the exact two observed desktop menu conditions
+instead of an animated touch wheel. Its injected scripts passed five live reads
+of seasons 1, 2, 3, 1, 2; those reads are separate from iOS WebKit verification.
+Ten local regression checks pass. A fresh macOS build and Simulator run are still
+required; the hosted runner was unavailable for the latest candidate.
+
 Catalog and artwork originate in Cinejoy's public pages and TMDB. Fixtures and
 the bundled snapshot contain public descriptive metadata, not user accounts,
 API credentials, media files or stream-resolver results.
