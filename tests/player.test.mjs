@@ -44,7 +44,7 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   let controlCount = 0;
   const messages = [];
   const video = {
-    currentTime: 0, duration: 8000, readyState: 1, paused: true, currentSrc: '', preload: 'metadata',
+    currentTime: 0, duration: 8000, readyState: 1, paused: true, currentSrc: '',
     getAttribute() { return this.currentSrc; },
     querySelector() { return this.sourceElement; },
     setAttribute(name, value) { this[name] = value; },
@@ -56,42 +56,25 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   };
   const source = readFileSync(new URL('../Resources/PlayerIntegration.js', import.meta.url), 'utf8')
     .replace('__RESUME_SECONDS__', '42');
-  let clock = 1000;
   vm.runInNewContext(source, {
     document, location: { pathname: '/watch/movie/27205' },
     window: {
       __cinejoyPlayerEnvironment: {mse: false, mms: true, nativeHls: 'maybe', setterGuard: true, removalGuard: true},
       webkit: { messageHandlers: { watch: { postMessage: value => messages.push(value) } } },
     },
-    Date: {now: () => clock += 1001},
     setInterval: fn => { tick = fn; }, HTMLVideoElement: Object,
   });
   tick();
   assert.equal(playCount, 0, 'wait for an attached source');
-  assert.equal(video.preload, 'metadata', 'leave the unattached template alone');
-  assert.equal(video.currentTime, 0, 'metadata readiness must not seek the managed source');
+  assert.equal(video.currentTime, 42);
   video.sourceElement = {src: 'blob:https://cinejoy.pk/test-source'};
   tick();
   await Promise.resolve();
   assert.equal(playCount, 1, 'start a managed source child without waiting for currentSrc or a decoded frame');
-  assert.equal(video.preload, 'auto', 'request media rather than metadata before the first play');
   assert.equal(controlCount, 1, 'enter through the website playback action as well as the media element');
-  assert.equal(video.currentTime, 0, 'starting playback still defers the saved seek until decoded data');
   video.currentSrc = video.sourceElement.src;
   tick();
   assert.equal(playCount, 1, 'currentSrc adopting the source child does not start it twice');
-  assert.equal(video.currentTime, 0);
-  const metadataReport = messages.at(-1);
-  assert.equal(metadataReport.readyState, 1);
-  assert.equal(metadataReport.paused, false);
-  assert.equal(metadataReport.seconds, 0, 'metadata reports remain truthful and native UI can show Buffering');
-  video.readyState = 2;
-  tick();
-  assert.equal(video.currentTime, 42, 'apply the saved seek once a decoded frame is available');
-  assert.equal(messages.at(-1).seconds, 42, 'the first decoded report contains the actual resumed clock');
-  video.currentTime = 50;
-  tick();
-  assert.equal(video.currentTime, 50, 'do not reapply the saved position after playback progresses');
   video.paused = true;
   tick();
   assert.equal(playCount, 1, 'the polling bridge must not undo a user pause');
@@ -101,7 +84,7 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   assert.equal(playCount, 2, 'a replacement server source can start on the existing video element');
   assert.equal(video.disableRemotePlayback, true);
   assert.equal(video['x-webkit-airplay'], 'deny');
-  assert.equal(messages[0].seconds, 0, 'do not report the saved position before it was really applied');
+  assert.equal(messages[0].seconds, 42);
   assert.equal(messages[0].path, '/watch/movie/27205');
   assert.match(messages[0].networkTrace, /mse=0 mms=1 .*guards=11 src=none/);
   assert.equal(messages[0].networkTrace.includes('https://'), false, 'capability diagnostics contain no stream URL');
@@ -175,37 +158,4 @@ test('pending initial playback crosses only a small actual buffered-start gap on
   paused.tick();
   assert.equal(paused.video.currentTime, 0, 'preserve a user pause while the initial request is pending');
   assert.equal(paused.plays(), 1);
-});
-
-test('test-only diagnostics observe layout and managed buffers without exposing blob URLs', () => {
-  const source = readFileSync(new URL('../Resources/PlayerDiagnostics.js', import.meta.url), 'utf8');
-  const privateURL = 'blob:https://cinejoy.pk/private-source-token';
-  const media = {readyState: 'open', streaming: true, sourceBuffers: [{
-    updating: false, timestampOffset: 0,
-    buffered: {length: 1, start: () => 0.125125, end: () => 4.010666666666666},
-  }]};
-  const urlAPI = {
-    createObjectURL(object) { assert.equal(object, media); return privateURL; },
-    revokeObjectURL(url) { assert.equal(url, privateURL); return 'revoked'; },
-  };
-  class Request { open() {} }
-  const window = {};
-  vm.runInNewContext(source, {
-    window, URL: urlAPI, XMLHttpRequest: Request,
-    getComputedStyle: () => ({display: 'block', visibility: 'visible', opacity: '1'}),
-  });
-  const url = urlAPI.createObjectURL(media);
-  const video = {
-    currentSrc: url, currentTime: 0.125125, seeking: true, paused: false,
-    videoWidth: 640, videoHeight: 360, preload: 'metadata', playsInline: true,
-    getBoundingClientRect: () => ({x: 0, y: 0, width: 844, height: 390}),
-  };
-  const snapshot = window.__cinejoyPlayerDebug(video);
-  assert.match(snapshot, /t=0\.125125 seek=1 paused=0 decoded=640x360 preload=metadata inline=1/);
-  assert.match(snapshot, /rect=0,0,844,390 css=block\/visible\/1/);
-  assert.match(snapshot, /ms=open streaming=true sb=1 sb0=0\.125125:4\.010666666666666\/up0\/offset0/);
-  assert.equal(snapshot.includes('private-source-token'), false);
-  assert.equal(snapshot.includes('blob:'), false);
-  assert.equal(urlAPI.revokeObjectURL(url), 'revoked');
-  assert.equal(window.__cinejoyPlayerDebug(video).includes('ms=open'), false);
 });

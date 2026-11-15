@@ -46,19 +46,14 @@
         range = `${video.buffered.start(0)}:${video.buffered.end(0)}`;
       }
     } catch {}
-    let testSnapshot = '';
-    try { testSnapshot = window.__cinejoyPlayerDebug?.(video) || ''; } catch {}
-    return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)} range=${range} visibility=${document.visibilityState || '?'} ${testSnapshot}`;
+    return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)} range=${range} visibility=${document.visibilityState || '?'}`;
   };
   const report = video => {
     const seconds=Number.isFinite(video.currentTime)?video.currentTime:0;
     const duration=Number.isFinite(video.duration)?video.duration:0;
-    // Let WebKit decode the initial media before seeking to a saved position.
-    // A seek at metadata-only readiness can leave ManagedMediaSource pending.
-    if(!resumed && resumeAt>0 && duration>0 && video.readyState>=2 && !video.seeking) {
-      if(resumeAt<video.duration-20) {
-        try { video.currentTime=resumeAt; resumed=true; } catch {}
-      } else resumed=true;
+    if(!resumed && resumeAt>0 && duration>0 && video.readyState>=1) {
+      resumed=true;
+      if(resumeAt<video.duration-20)video.currentTime=resumeAt;
     }
     if(Date.now()-lastReport<1000)return;
     lastReport=Date.now();
@@ -85,9 +80,6 @@
       const source=sourceOf(video);
       if(source&&started.get(video)!==source){
         started.set(video,source);
-        // The shipped template requests metadata only. Once a source is
-        // attached and playback is requested, allow WebKit to preload media.
-        video.preload='auto';
         // Use the player's action too, so its loading and playback state agree
         // with the media element when entering directly from the native app.
         if(video.paused)document.querySelector('button[aria-label="Play"]')?.click();
