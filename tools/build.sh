@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v xcodegen >/dev/null || { echo 'Install XcodeGen: brew install xcodegen' >&2; exit 1; }
+bash tools/check_hls_proxy.sh
 swift tools/Icon.swift Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 xcodegen generate
 xcodebuild -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Release \

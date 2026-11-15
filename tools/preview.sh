@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist/previews
-QA_FOCUS=${CINEJOY_QA_FOCUS:-full}
+QA_FOCUS=${CINEJOY_QA_FOCUS:-player}
 case "$QA_FOCUS" in
   full|player) ;;
   *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;

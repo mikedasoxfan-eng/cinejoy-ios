@@ -30,8 +30,9 @@ with zipfile.ZipFile(ipa) as archive:
     assert info["MinimumOSVersion"].startswith("26."), "Unexpected minimum iOS version"
     assert "NSLocalNetworkUsageDescription" not in info, "Local-network permission was not removed"
     assert info.get("UIBackgroundModes") == ["audio"], "Media background mode is missing"
-    for resource in ["CatalogSeed.json", "CatalogExtraction.js", "PlayerEnvironment.js", "PlayerIntegration.js", "PlayerDiagnostics.js", "Assets.car"]:
+    for resource in ["CatalogSeed.json", "CatalogExtraction.js", "PlayerEnvironment.js", "PlayerIntegration.js", "PlayerDiagnostics.js", "PlayerStreamObserver.js", "NativeCaptionObserver.js", "Assets.car"]:
         assert root + resource in archive.namelist(), f"Missing packaged resource: {resource}"
+    assert info.get("NSAppTransportSecurity") == {"NSExceptionDomains": {"127.0.0.1": {"NSExceptionAllowsInsecureHTTPLoads": True}}}, "Expected only the local media transport exception"
     script = archive.read(root + "PlayerIntegration.js").decode()
     assert "disableRemotePlayback=true" in script and "x-webkit-airplay" in script
     assert 'button[aria-label="Cast to Device"]' in script
@@ -44,6 +45,6 @@ with zipfile.ZipFile(ipa) as archive:
         architecture="arm64", platform="iOS device", resources_verified=True,
         casting_control_removed=True, local_network_permission=False,
         signed=any(name.startswith(root + "_CodeSignature/") for name in archive.namelist()),
-        background_modes=info.get("UIBackgroundModes", []),
+        background_modes=info.get("UIBackgroundModes", []), loopback_media_transport=True,
     )
 print(json.dumps(output, indent=2))
