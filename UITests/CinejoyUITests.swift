@@ -201,7 +201,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Close player"].waitForExistence(timeout: 8))
         let resumedStatus = app.staticTexts["player-status"]
         let resumed = NSPredicate(format: "value BEGINSWITH %@", "Playing, ")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: resumed, object: resumedStatus)], timeout: 60), .completed)
+        let resumedResult = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: resumed, object: resumedStatus)], timeout: 60)
+        capture("12b-resume-attempt", app)
+        XCTAssertEqual(resumedResult, .completed)
         XCTAssertGreaterThanOrEqual(elapsed(resumedStatus), savedSeconds - 2, "The first playing report resumes the saved position instead of restarting at zero")
         capture("12b-resumed-player", app)
         app.buttons["Close player"].tap()
@@ -231,7 +233,7 @@ final class CinejoyUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        if name.hasPrefix("11-") || name == "10b-tv-episode-player" {
+        if name.hasPrefix("11-") || name == "10b-tv-episode-player" || name == "12b-resume-attempt" {
             let diagnostics = app.buttons["Close player"].value as? String ?? "No media diagnostics"
             print("Cinejoy media state: \(diagnostics)")
             let state = XCTAttachment(string: diagnostics)

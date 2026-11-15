@@ -53,9 +53,12 @@
   const report = video => {
     const seconds=Number.isFinite(video.currentTime)?video.currentTime:0;
     const duration=Number.isFinite(video.duration)?video.duration:0;
-    if(!resumed && resumeAt>0 && duration>0 && video.readyState>=1) {
-      resumed=true;
-      if(resumeAt<video.duration-20)video.currentTime=resumeAt;
+    // Let WebKit decode the initial media before seeking to a saved position.
+    // A seek at metadata-only readiness can leave ManagedMediaSource pending.
+    if(!resumed && resumeAt>0 && duration>0 && video.readyState>=2 && !video.seeking) {
+      if(resumeAt<video.duration-20) {
+        try { video.currentTime=resumeAt; resumed=true; } catch {}
+      } else resumed=true;
     }
     if(Date.now()-lastReport<1000)return;
     lastReport=Date.now();
