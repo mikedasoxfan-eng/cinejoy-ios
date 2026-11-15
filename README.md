@@ -4,8 +4,10 @@ Native SwiftUI discovery, title details, episode lists, search and an on-device
 library. Uses real iOS 26 Liquid Glass, a minimizing tab bar, a dedicated search
 tab, glass playback controls and a resume accessory. No accounts or cloud library.
 
-The native catalog reads Cinejoy's public rendered pages. Streaming uses Cinejoy's
-existing player inside WebKit; the stream resolver is not copied. A bundled
+The native catalog reads Cinejoy's public rendered pages. Its existing public
+player resolves the stream inside WebKit; playback then uses native AVKit through
+a loopback-only HLS transport that corrects the provider's media MIME. The stream
+resolver is not copied. A bundled
 snapshot of 131 real titles provides immediate content while live data loads.
 This is an independent personal-use client, not an official Cinejoy release.
 
@@ -33,8 +35,9 @@ screenshots. Download the `Cinejoy-IPA` artifact from the successful run.
 
 - `ios-ipa` builds the unsigned iPhone IPA and its package-verification report.
 - `ios-simulator-qa` also runs the native UI tests and exports iPhone/iPad captures.
+- `ios-player-qa` isolates real movie playback, resume, and TV episode checks for faster diagnosis.
 
-Both workflows use an M2 Mac with Xcode 26.6 and start manually. Download
+These workflows use an M2 Mac with Xcode 26.6 and start manually. Download
 `Cinejoy-unsigned.ipa` from the build artifacts and re-sign it for your device.
 Codemagic requires a service sign-in; this project supplies no Apple certificate
 or App Store Connect credentials. The app itself remains account-free.
@@ -49,8 +52,9 @@ bash tools/preview.sh
 
 The DOM-extraction tests use retained public-page HTML fixtures generated locally
 from the REA captures; no account credentials are present. Simulator captures
-cover light/dark appearance and accessibility text. Actual streaming,
-picture-in-picture and sideloading need verification on an iOS device.
+cover light/dark appearance and accessibility text. Movie/TV playback, resume and history passed native Simulator checks. Physical
+Picture in Picture and sideloading remain separate checks; see [QA.md](QA.md) for
+the recorded provider timeouts and verification limits.
 AirPlay and remote playback are disabled, and the casting control is removed.
 
 ## Data
