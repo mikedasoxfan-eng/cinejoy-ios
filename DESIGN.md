@@ -58,10 +58,14 @@ catalog loads. Cached data is not presented as live trending data.
   move to a leading glass rail outside the video frame, so they never cover AVKit's
   controls.
 - Full Screen is an always-visible glass control. AVKit's inline controls auto-hide,
-  so they are not the only route. The control presents the system
-  AVPlayerViewController modally on the same AVPlayer (public API; no new item, no
-  seek). AVKit's own close control or swipe-down returns the player inline with its
-  time and playing state. AVKit's inline fullscreen button keeps working too.
+  so they are not the only route. The control presents an app-owned fullscreen
+  container that embeds the system AVPlayerViewController as a child, on the same
+  AVPlayer (public API; no new item, no seek). AVKit keeps playback, scrubbing, PiP
+  and captions. The container owns dismissal through one Liquid Glass return control
+  (top-leading, in a band reserved above AVKit's controls). That control reads the
+  real play/pause state before dismissing and restores it exactly inline. There is no
+  timing heuristic, so a quick pause-then-return stays paused. AVKit's own inline
+  fullscreen button keeps working too.
 - Picture in Picture is first-class in both presentations. Captions are hosted in the
   content overlay of whichever controller shows the video, and only while a
   caption track is on.

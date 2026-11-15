@@ -193,11 +193,23 @@ final class CinejoyUITests: XCTestCase {
                       "Up next shows the current season with the playing episode marked")
         let nextEpisode = app.buttons["Play episode 2, Grilled"]
         XCTAssertTrue(nextEpisode.waitForExistence(timeout: 5))
-        for _ in 0..<3 {
-            if nextEpisode.isHittable { break }
-            app.swipeUp()
+        // Scroll only the portrait info panel (the video stage stays fixed), in short
+        // steps toward the row's actual position: up when it is below the panel,
+        // down when it is above. Whole-app swipes over-scrolled past it before.
+        let panel = app.scrollViews["player-info-panel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "The player's info panel is addressable")
+        for _ in 0..<8 {
+            let row = nextEpisode.frame
+            let area = panel.frame
+            if nextEpisode.isHittable, area.contains(row) { break }
+            let below = row.maxY > area.maxY
+            let start = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: below ? 0.65 : 0.35))
+            let end = panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: below ? 0.40 : 0.60))
+            // Slow drag with a hold at the end: no fling momentum carrying past the row.
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
         }
-        XCTAssertTrue(nextEpisode.isHittable)
+        XCTAssertTrue(nextEpisode.isHittable && panel.frame.contains(nextEpisode.frame),
+                      "Episode 2 is fully inside the visible info panel: row \(nextEpisode.frame), panel \(panel.frame)")
         nextEpisode.tap()
         let switched = NSPredicate(format: "value CONTAINS %@", "path=/watch/tv/1396/2/2")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: switched, object: close)], timeout: 60), .completed,
@@ -247,6 +259,9 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 60), .completed,
                        "Inline playback starts before fullscreen is attempted")
         let before = elapsed(status)
+        // Session and item identity before fullscreen; compared after each exit.
+        let identityBefore = close.value as? String ?? ""
+        XCTAssertNotNil(token("session", identityBefore), "Diagnostics expose the session identity: \(identityBefore)")
 
         // The native stage is addressable and the hidden public page is not:
         // its player controls must not be reachable behind the native video.
@@ -270,28 +285,20 @@ final class CinejoyUITests: XCTestCase {
                        "The system fullscreen player covers the app chrome")
         sleep(2)
         capture("16-native-fullscreen", app)
+        XCTAssertTrue(app.buttons["native-fullscreen-return"].isHittable, "Return control visible in portrait fullscreen")
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(4)
+        XCTAssertTrue(app.buttons["native-fullscreen-return"].isHittable, "Return control visible in landscape fullscreen")
         capture("16b-native-fullscreen-landscape", app)
         XCUIDevice.shared.orientation = .portrait
         sleep(2)
 
-        // Leave with AVKit's own close control, or its swipe-down dismissal gesture.
-        let fullscreenPlayer = app.otherElements["native-fullscreen-player"]
-        let exitLabels = NSPredicate(format: "label ==[c] 'Close' OR label ==[c] 'Done' OR label ==[c] 'Dismiss' OR label ==[c] 'Exit Full Screen' OR label ==[c] 'Collapse'")
-        let exit = app.buttons.matching(exitLabels).firstMatch
-        var exited = false
-        for _ in 0..<3 where !exited {
-            // Reveal AVKit's auto-hidden controls by tapping the fullscreen player itself.
-            let surface = fullscreenPlayer.exists ? fullscreenPlayer : app.windows.firstMatch
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            if exit.waitForExistence(timeout: 1.5), exit.isHittable { exit.tap(); exited = true }
-        }
-        if !exited {
-            let surface = fullscreenPlayer.exists ? fullscreenPlayer : app.windows.firstMatch
-            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-                .press(forDuration: 0.05, thenDragTo: surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
-        }
+        // Leave with the app's own return control. It is always visible and owns
+        // dismissal; the test never taps the video itself (that can hit play/pause).
+        let returnControl = app.buttons["native-fullscreen-return"]
+        XCTAssertTrue(returnControl.waitForExistence(timeout: 5) && returnControl.isHittable,
+                      "The fullscreen return control is visible")
+        returnControl.tap()
         let hittable = NSPredicate(format: "exists == true AND hittable == true")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 10), .completed,
                        "The inline player and its close control return after fullscreen")
@@ -301,10 +308,55 @@ final class CinejoyUITests: XCTestCase {
                        "Playback is still running after leaving fullscreen")
         XCTAssertGreaterThanOrEqual(elapsed(status), before + 5, "The same AVPlayer kept its time through fullscreen (no restart from zero)")
         let diagnostics = close.value as? String ?? ""
+        XCTAssertEqual(token("session", diagnostics), token("session", identityBefore), "Same playback session after fullscreen: \(diagnostics)")
+        XCTAssertEqual(token("items", diagnostics), token("items", identityBefore), "Same AVPlayer item, no reload of the public page: \(diagnostics)")
+        XCTAssertEqual(token("fsExit", diagnostics), "resumed", "The hand-back kept playing: \(diagnostics)")
         XCTAssertTrue(diagnostics.contains("external=false"), "External playback stays disabled: \(diagnostics)")
         XCTAssertTrue(diagnostics.contains("fullscreen=false"), "The session left fullscreen state: \(diagnostics)")
         XCTAssertFalse(app.buttons["Fullscreen"].exists, "The hidden website stays unexposed after fullscreen")
         capture("16c-after-fullscreen", app)
+
+        // A pause made inside fullscreen survives leaving it, even when the user
+        // returns immediately after pausing (no waiting window).
+        let resumedTime = elapsed(status)
+        XCTAssertTrue(enter.waitForExistence(timeout: 5) && enter.isHittable)
+        enter.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: covered, object: close)], timeout: 8), .completed)
+        let pause = app.buttons.matching(NSPredicate(format: "label ==[c] 'Pause'")).firstMatch
+        if !(pause.exists && pause.isHittable) { revealFullscreenControls(app) }
+        XCTAssertTrue(pause.waitForExistence(timeout: 3) && pause.isHittable, "AVKit's Pause control is reachable in fullscreen")
+        pause.tap()
+        XCTAssertTrue(returnControl.isHittable)
+        returnControl.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 10), .completed)
+        let pausedValue = NSPredicate(format: "value BEGINSWITH 'Paused, '")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: pausedValue, object: status)], timeout: 5), .completed,
+                       "A user pause inside fullscreen stays paused after an immediate return")
+        let pausedAt = status.value as? String ?? ""
+        XCTAssertGreaterThanOrEqual(elapsed(status), resumedTime, "Same player time after the paused round trip (no restart)")
+        // Observe that nothing resumes it: the value must not change within 3 s.
+        let changed = NSPredicate(format: "value != %@", pausedAt)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: changed, object: status)], timeout: 3), .timedOut,
+                       "Playback is not resumed behind the user's back")
+        let pausedDiagnostics = close.value as? String ?? ""
+        XCTAssertEqual(token("fsExit", pausedDiagnostics), "kept-paused", pausedDiagnostics)
+        XCTAssertEqual(token("session", pausedDiagnostics), token("session", identityBefore), pausedDiagnostics)
+        XCTAssertEqual(token("items", pausedDiagnostics), token("items", identityBefore), pausedDiagnostics)
+        XCTAssertTrue(pausedDiagnostics.contains("fullscreen=false") && pausedDiagnostics.contains("external=false"), pausedDiagnostics)
+        capture("16d-after-fullscreen-paused", app)
+    }
+
+    /// AVKit's controls auto-hide. Reveal them with a tap on empty letterbox space,
+    /// well away from play/pause and skip controls and from the return control.
+    @MainActor private func revealFullscreenControls(_ app: XCUIApplication) {
+        let player = app.otherElements["native-fullscreen-player"]
+        let surface = player.exists ? player : app.windows.firstMatch
+        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+    }
+
+    /// Reads `key=value` from the player's diagnostics string.
+    private func token(_ key: String, _ diagnostics: String) -> String? {
+        diagnostics.split(separator: " ").first { $0.hasPrefix("\(key)=") }.map { String($0.dropFirst(key.count + 1)) }
     }
 
     @MainActor func testSettingsAppearance() throws {

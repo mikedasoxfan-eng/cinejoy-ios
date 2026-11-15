@@ -365,6 +365,7 @@ private struct PlayerInfoPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollIndicators(.hidden)
+        .accessibilityIdentifier("player-info-panel")
     }
 
     private var metadata: String {
@@ -529,6 +530,11 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     @ObservationIgnored var isPictureInPicture = false
     /// The inline AVKit coordinator that can present the same AVPlayer full screen.
     @ObservationIgnored weak var fullScreenPresenter: NativeMoviePlayer.Coordinator?
+    /// Identity and fullscreen diagnostics (UI tests compare these across a round trip):
+    /// the number of AVPlayer items installed for this session and how the last
+    /// fullscreen exit was resolved.
+    @ObservationIgnored private(set) var installedItems = 0
+    @ObservationIgnored var lastFullScreenExit = "none"
     /// Receives (path, seconds, duration, force). Ticks once per second; the library coalesces.
     @ObservationIgnored var onProgress: (@MainActor (String, Double, Double, Bool) -> Void)?
     @ObservationIgnored weak var webView: WKWebView?
@@ -642,6 +648,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         removePlayerObservers()
         player?.pause()
         let item = AVPlayerItem(url: url)
+        installedItems += 1
         // Start on the first listed variant rather than probing; ABR adapts after.
         item.startsOnFirstEligibleVariant = true
         let native = AVPlayer(playerItem: item)
@@ -720,8 +727,15 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         let second = Int(Date.timeIntervalSinceReferenceDate)
         if second != lastDiagnosticTick, item.status != .failed {
             lastDiagnosticTick = second
-            diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(seconds)) duration=\(Int(duration)) path=\(path) external=\(native.isExternalPlaybackActive) fullscreen=\(isFullScreen) pip=\(isPictureInPicture)"
+            refreshDiagnostics()
         }
+    }
+
+    /// Also called on presentation changes: the periodic observer stops while paused,
+    /// so state such as `fullscreen=` must not wait for the next playing tick.
+    func refreshDiagnostics() {
+        guard let native = player, let item = native.currentItem else { return }
+        diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(native.currentTime().seconds.isFinite ? native.currentTime().seconds : seconds)) duration=\(Int(duration)) path=\(path) external=\(native.isExternalPlaybackActive) fullscreen=\(isFullScreen) pip=\(isPictureInPicture) session=\(audioOwnerID.uuidString.prefix(8)) items=\(installedItems) fsExit=\(lastFullScreenExit)"
     }
 
     /// Stores the exact current position (close, pause, background, episode change).
@@ -871,14 +885,10 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
         let session: NativePlaybackSession
         weak var inline: AVPlayerViewController?
         private var inlineCaptions: UIHostingController<NativeCaptionLayer>?
-        private var fullScreen: AVPlayerViewController?
+        /// The app-owned fullscreen container (its child is a system AVPlayerViewController).
+        private var fullScreen: NativeFullScreenContainer?
         private var fullScreenCaptions: UIHostingController<NativeCaptionLayer>?
-        private var watchdog: Task<Void, Never>?
         private var captionsActive = false
-        /// Sampled while the fullscreen controller is up (not while it is dismissing),
-        /// so a pause caused by the dismissal itself is not mistaken for the user's choice.
-        private var fullScreenWasPlaying = false
-        private var restoreAfterPictureInPicture = false
 
         init(session: NativePlaybackSession) { self.session = session }
 
@@ -905,89 +915,94 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
             captionsActive = active
             if active {
                 if inlineCaptions == nil, let inline { inlineCaptions = makeCaptionHost(in: inline) }
-                if fullScreenCaptions == nil, let fullScreen { fullScreenCaptions = makeCaptionHost(in: fullScreen) }
+                if fullScreenCaptions == nil, let fullScreen { fullScreenCaptions = makeCaptionHost(in: fullScreen.playerController) }
             } else {
                 inlineCaptions?.view.removeFromSuperview(); inlineCaptions = nil
                 fullScreenCaptions?.view.removeFromSuperview(); fullScreenCaptions = nil
             }
         }
 
-        // MARK: Fullscreen (supported: modal AVPlayerViewController on the same AVPlayer)
+        // MARK: Fullscreen (app-owned container embedding the system player)
 
         func presentFullScreen() {
             guard fullScreen == nil, let inline, inline.viewIfLoaded?.window != nil,
                   inline.presentedViewController == nil, let player = inline.player ?? session.player else { return }
-            let full = AVPlayerViewController()
-            full.modalPresentationStyle = .fullScreen
-            full.delegate = self
-            full.showsPlaybackControls = true
-            full.videoGravity = .resizeAspect
-            full.allowsPictureInPicturePlayback = true
-            full.entersFullScreenWhenPlaybackBegins = false
-            full.exitsFullScreenWhenPlaybackEnds = false
-            full.view.backgroundColor = .black
-            full.view.accessibilityIdentifier = "native-fullscreen-player"
+            let child = AVPlayerViewController()
+            child.delegate = self
+            child.showsPlaybackControls = true
+            child.videoGravity = .resizeAspect
+            child.allowsPictureInPicturePlayback = true
+            child.canStartPictureInPictureAutomaticallyFromInline = true
+            child.entersFullScreenWhenPlaybackBegins = false
+            child.exitsFullScreenWhenPlaybackEnds = false
+            child.view.backgroundColor = .black
+            let container = NativeFullScreenContainer(playerController: child) { [weak self] container in
+                self?.closeFullScreen(container)
+            }
+            container.dismissedWithoutOwner = { [weak self] container in
+                // Not expected (the app owns dismissal); keep the player consistent anyway.
+                guard let self else { return }
+                let player = container.playerController.player ?? self.session.player
+                self.handBack(container, player: player, playing: player.map { $0.timeControlStatus != .paused } ?? false)
+            }
             let wasPlaying = player.timeControlStatus != .paused
-            fullScreenWasPlaying = wasPlaying
             // One AVPlayer, moved between two system controllers: no new item,
             // no seek, no second decode. Only one layer shows the picture.
             inline.player = nil
-            full.player = player
-            fullScreen = full
-            if captionsActive { fullScreenCaptions = makeCaptionHost(in: full) }
+            child.player = player
+            fullScreen = container
+            if captionsActive { fullScreenCaptions = makeCaptionHost(in: child) }
             session.isFullScreen = true
+            session.refreshDiagnostics()
             Perf.log.info("Native fullscreen: present (playing=\(wasPlaying))")
-            inline.present(full, animated: true) {
+            inline.present(container, animated: true) {
+                // Moving the player between layers must not change its state.
                 if wasPlaying, player.timeControlStatus == .paused { player.play() }
-            }
-            watchdog?.cancel()
-            watchdog = Task { [weak self, weak full] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    guard let self, let full, self.fullScreen === full else { return }
-                    if full.presentingViewController != nil {
-                        if !full.isBeingDismissed, !full.isBeingPresented, let player = full.player {
-                            self.fullScreenWasPlaying = player.timeControlStatus != .paused
-                        }
-                    } else if !full.isBeingPresented {
-                        // Dismissed by AVKit's close control or the swipe-down gesture.
-                        self.restoreInline(from: full)
-                        return
-                    }
-                }
             }
         }
 
-        private func restoreInline(from full: AVPlayerViewController) {
-            guard fullScreen === full else { return }
-            if session.isPictureInPicture {
-                // Picture in Picture is playing from this controller's layer; hand the
-                // player back once it ends rather than cutting PiP off.
-                restoreAfterPictureInPicture = true
-                return
+        /// The return control's action. The player's actual state is read *before*
+        /// anything is dismissed, so it is exactly the user's state, however quickly
+        /// they paused before returning.
+        private func closeFullScreen(_ container: NativeFullScreenContainer) {
+            guard fullScreen === container, !container.isBeingDismissed, !container.closedByOwner else { return }
+            let player = container.playerController.player ?? session.player
+            let playing = player.map { $0.timeControlStatus != .paused } ?? false
+            container.beginOwnerClose()
+            container.dismiss(animated: true) { [weak self] in
+                MainActor.assumeIsolated { self?.handBack(container, player: player, playing: playing) }
             }
-            watchdog?.cancel(); watchdog = nil
+        }
+
+        /// Reattaches the same AVPlayer (same item, same time) inline and restores the
+        /// sampled play/pause state exactly.
+        private func handBack(_ container: NativeFullScreenContainer, player sampled: AVPlayer?, playing: Bool) {
+            guard fullScreen === container else { return }
             fullScreen = nil
-            restoreAfterPictureInPicture = false
             fullScreenCaptions?.view.removeFromSuperview(); fullScreenCaptions = nil
-            let player = full.player
-            full.player = nil
-            full.delegate = nil
-            if let player, let inline { inline.player = player }
+            container.playerController.player = nil
+            container.playerController.delegate = nil
+            let player = sampled ?? session.player
+            if let player, let inline, inline.player !== player { inline.player = player }
             session.isFullScreen = false
-            let resumed = fullScreenWasPlaying
-            session.resumeAfterPresentation(wasPlaying: resumed)
-            Perf.log.info("Native fullscreen: restored inline (resumed=\(resumed))")
+            if playing {
+                session.resumeAfterPresentation(wasPlaying: true)
+            } else if let player, player.timeControlStatus != .paused {
+                player.pause()
+            }
+            session.lastFullScreenExit = playing ? "resumed" : "kept-paused"
+            session.refreshDiagnostics()
+            Perf.log.info("Native fullscreen: returned inline (playing=\(playing))")
         }
 
         func tearDown() {
-            watchdog?.cancel(); watchdog = nil
             setCaptions(active: false)
-            if let full = fullScreen {
+            if let container = fullScreen {
                 fullScreen = nil
-                full.player = nil
-                full.delegate = nil
-                if full.presentingViewController != nil { full.dismiss(animated: false) }
+                container.beginOwnerClose()
+                container.playerController.player = nil
+                container.playerController.delegate = nil
+                if container.presentingViewController != nil { container.dismiss(animated: false) }
             }
             if session.fullScreenPresenter === self { session.fullScreenPresenter = nil }
         }
@@ -1002,29 +1017,19 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
 
         func playerViewController(_ playerViewController: AVPlayerViewController,
                                   willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
+            // AVKit's own fullscreen route (from the inline player, or from the child inside
+            // the app's container). The app's container stays up in the latter case.
             let wasPlaying = playerViewController.player?.timeControlStatus != .paused
             let session = self.session
-            if let full = fullScreen, playerViewController === full {
-                fullScreenWasPlaying = wasPlaying
-                coordinator.animate(alongsideTransition: nil) { [weak self] context in
-                    guard !context.isCancelled else { return }
-                    MainActor.assumeIsolated { self?.restoreInline(from: full) }
-                }
-                return
-            }
+            let insideContainer = playerViewController === fullScreen?.playerController
             coordinator.animate(alongsideTransition: nil) { context in
                 guard !context.isCancelled else { return }
                 MainActor.assumeIsolated {
-                    session.isFullScreen = false
+                    if !insideContainer { session.isFullScreen = false }
                     session.resumeAfterPresentation(wasPlaying: wasPlaying)
                     Perf.log.info("AVKit fullscreen: end, resumed=\(wasPlaying)")
                 }
             }
-        }
-
-        func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(_ playerViewController: AVPlayerViewController) -> Bool {
-            // Keep our modal fullscreen in place during PiP; its layer is the PiP source.
-            playerViewController !== fullScreen
         }
 
         func playerViewControllerDidStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
@@ -1033,9 +1038,6 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
 
         func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
             session.isPictureInPicture = false
-            if restoreAfterPictureInPicture, let full = fullScreen, playerViewController === full {
-                restoreInline(from: full)
-            }
         }
 
         func playerViewController(_ playerViewController: AVPlayerViewController,
