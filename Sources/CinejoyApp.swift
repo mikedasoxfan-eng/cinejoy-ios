@@ -53,7 +53,9 @@ struct RootView: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .task { await catalog.refresh() }
+        .task {
+            if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] != "1" { await catalog.refresh() }
+        }
     }
 }
 

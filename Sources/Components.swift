@@ -50,6 +50,7 @@ struct PosterCard: View {
         }
         .sensoryFeedback(.selection, trigger: library.contains(title))
         .accessibilityLabel("\(title.name), \(title.year), \(title.isSeries ? "TV show" : "movie")")
+        .accessibilityIdentifier("title-\(title.id)")
     }
 }
 

@@ -101,6 +101,7 @@ struct SearchScreen: View {
         error = nil
         results = catalog.titles.filter { $0.name.localizedCaseInsensitiveContains(term) }
         defer { if query.trimmingCharacters(in: .whitespacesAndNewlines) == term { isLoading = false } }
+        if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" { return }
         var components = URLComponents()
         components.path = "/search"
         components.queryItems = [URLQueryItem(name: "q", value: term)]

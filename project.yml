@@ -31,3 +31,14 @@ targets:
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to playback devices on your network when you choose AirPlay.
     scheme:
       gatherCoverageData: false
+      testTargets: [CinejoyUITests]
+  CinejoyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: Cinejoy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.cinejoy.glass.uitests
+        GENERATE_INFOPLIST_FILE: YES
