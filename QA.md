@@ -1,8 +1,11 @@
 # Verification of the delivered IPA
 
-The delivered IPA is the native AVKit candidate from source `cb69a8a`, built by
-GitHub run `43726453372`. The application Sources, Resources and project.yml in
-main match that candidate; later changes concern documentation and CI defaults.
+The current IPA is build 2 from source `911766e`, built by GitHub run
+`43729958578`. It replaces the icon with Cinejoy's official favicon artwork.
+The 1024px opaque preview was inspected and the compiled iPhone/iPad icons were
+confirmed changed. Native playback Swift sources remain identical to the tested
+`cb69a8a` candidate from successful Simulator run `43726453372`. Functional tests
+were not repeated for this icon-only update.
 
 ## Passed
 
@@ -23,7 +26,7 @@ main match that candidate; later changes concern documentation and CI defaults.
 
 Movie and TV streaming timed out on Codemagic's runner while the same native
 playback flow passed on GitHub's Simulator. The cause of that difference has not
-been isolated. The delivered IPA is the GitHub-tested artifact. Streaming remains
+been isolated. The delivered IPA retains that tested native playback implementation. Streaming remains
 dependent on the public website and provider availability.
 
 Native quality caps, provider controls and loaded-caption rendering are included;
