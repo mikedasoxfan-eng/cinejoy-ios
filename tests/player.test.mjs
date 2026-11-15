@@ -44,7 +44,7 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   let controlCount = 0;
   const messages = [];
   const video = {
-    currentTime: 0, duration: 8000, readyState: 1, paused: true, currentSrc: '',
+    currentTime: 0, duration: 8000, readyState: 1, paused: true, currentSrc: '', preload: 'metadata',
     getAttribute() { return this.currentSrc; },
     querySelector() { return this.sourceElement; },
     setAttribute(name, value) { this[name] = value; },
@@ -66,11 +66,13 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   });
   tick();
   assert.equal(playCount, 0, 'wait for an attached source');
+  assert.equal(video.preload, 'metadata', 'leave the unattached template alone');
   assert.equal(video.currentTime, 42);
   video.sourceElement = {src: 'blob:https://cinejoy.pk/test-source'};
   tick();
   await Promise.resolve();
   assert.equal(playCount, 1, 'start a managed source child without waiting for currentSrc or a decoded frame');
+  assert.equal(video.preload, 'auto', 'request media rather than metadata before the first play');
   assert.equal(controlCount, 1, 'enter through the website playback action as well as the media element');
   video.currentSrc = video.sourceElement.src;
   tick();
@@ -158,4 +160,37 @@ test('pending initial playback crosses only a small actual buffered-start gap on
   paused.tick();
   assert.equal(paused.video.currentTime, 0, 'preserve a user pause while the initial request is pending');
   assert.equal(paused.plays(), 1);
+});
+
+test('test-only diagnostics observe layout and managed buffers without exposing blob URLs', () => {
+  const source = readFileSync(new URL('../Resources/PlayerDiagnostics.js', import.meta.url), 'utf8');
+  const privateURL = 'blob:https://cinejoy.pk/private-source-token';
+  const media = {readyState: 'open', streaming: true, sourceBuffers: [{
+    updating: false, timestampOffset: 0,
+    buffered: {length: 1, start: () => 0.125125, end: () => 4.010666666666666},
+  }]};
+  const urlAPI = {
+    createObjectURL(object) { assert.equal(object, media); return privateURL; },
+    revokeObjectURL(url) { assert.equal(url, privateURL); return 'revoked'; },
+  };
+  class Request { open() {} }
+  const window = {};
+  vm.runInNewContext(source, {
+    window, URL: urlAPI, XMLHttpRequest: Request,
+    getComputedStyle: () => ({display: 'block', visibility: 'visible', opacity: '1'}),
+  });
+  const url = urlAPI.createObjectURL(media);
+  const video = {
+    currentSrc: url, currentTime: 0.125125, seeking: true, paused: false,
+    videoWidth: 640, videoHeight: 360, preload: 'metadata', playsInline: true,
+    getBoundingClientRect: () => ({x: 0, y: 0, width: 844, height: 390}),
+  };
+  const snapshot = window.__cinejoyPlayerDebug(video);
+  assert.match(snapshot, /t=0\.125125 seek=1 paused=0 decoded=640x360 preload=metadata inline=1/);
+  assert.match(snapshot, /rect=0,0,844,390 css=block\/visible\/1/);
+  assert.match(snapshot, /ms=open streaming=true sb=1 sb0=0\.125125:4\.010666666666666\/up0\/offset0/);
+  assert.equal(snapshot.includes('private-source-token'), false);
+  assert.equal(snapshot.includes('blob:'), false);
+  assert.equal(urlAPI.revokeObjectURL(url), 'revoked');
+  assert.equal(window.__cinejoyPlayerDebug(video).includes('ms=open'), false);
 });

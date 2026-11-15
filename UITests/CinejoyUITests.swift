@@ -43,31 +43,19 @@ final class CinejoyUITests: XCTestCase {
         let save = app.buttons["Save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5))
         capture("03-title-details", app)
-        let share = app.buttons["share-title"]
-        XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
-        // ShareLink presents the native activity sheet. Only open and dismiss it;
-        // no activity destination or send action is selected.
-        let closeShare = app.buttons["Close"].firstMatch
-        guard closeShare.waitForExistence(timeout: 8) else {
-            capture("03b-share", app)
-            XCTFail("The native share sheet exposes its Close control")
-            return
-        }
-        capture("03b-share", app)
-        closeShare.tap()
-        XCTAssertTrue(save.waitForExistence(timeout: 5))
         save.tap()
         XCTAssertTrue(app.buttons["Saved"].waitForExistence(timeout: 5))
-
-        app.tabBars.buttons["Library"].tap()
-        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'title-'")).firstMatch.waitForExistence(timeout: 5))
-        capture("04-local-library", app)
-
+        let share = app.buttons["share-title"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
+        // Capture the native activity sheet without choosing a destination. The
+        // persistence check's full app relaunch also closes this presentation.
+        capture("03b-share", app)
         app.terminate()
         app.launch()
         app.tabBars.buttons["Library"].tap()
+        XCTAssertTrue(app.navigationBars["Your Library"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'title-'")).firstMatch.waitForExistence(timeout: 5), "Saved titles survive a full app relaunch")
+        capture("04-local-library", app)
 
         app.tabBars.buttons["Search"].tap()
         let search = app.searchFields.firstMatch

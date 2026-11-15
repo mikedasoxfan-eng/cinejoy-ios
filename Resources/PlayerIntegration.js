@@ -46,7 +46,9 @@
         range = `${video.buffered.start(0)}:${video.buffered.end(0)}`;
       }
     } catch {}
-    return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)} range=${range} visibility=${document.visibilityState || '?'}`;
+    let testSnapshot = '';
+    try { testSnapshot = window.__cinejoyPlayerDebug?.(video) || ''; } catch {}
+    return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)} range=${range} visibility=${document.visibilityState || '?'} ${testSnapshot}`;
   };
   const report = video => {
     const seconds=Number.isFinite(video.currentTime)?video.currentTime:0;
@@ -80,6 +82,9 @@
       const source=sourceOf(video);
       if(source&&started.get(video)!==source){
         started.set(video,source);
+        // The shipped template requests metadata only. Once a source is
+        // attached and playback is requested, allow WebKit to preload media.
+        video.preload='auto';
         // Use the player's action too, so its loading and playback state agree
         // with the media element when entering directly from the native app.
         if(video.paused)document.querySelector('button[aria-label="Play"]')?.click();
