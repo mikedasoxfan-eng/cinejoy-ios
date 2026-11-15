@@ -81,7 +81,9 @@ struct PosterCard: View {
                                 .environment(\.colorScheme, .dark)
                         }
                     }
-                Text(title.name).font(.footnote.weight(.semibold)).lineLimit(2, reservesSpace: true)
+                // No reserved second line: in the native captures it left the year
+                // floating a full line below one-line titles. Rows are top-aligned.
+                Text(title.name).font(.footnote.weight(.semibold)).lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -218,6 +220,7 @@ struct FeaturedTitle: View {
                 .font(.subheadline).foregroundStyle(.white.opacity(0.85))
             if !title.overview.isEmpty, !dynamicTypeSize.isAccessibilitySize {
                 Text(title.overview).font(.footnote).foregroundStyle(.white.opacity(0.78)).lineLimit(2)
+                    .frame(maxWidth: 560, alignment: .leading)
             }
             GlassEffectContainer(spacing: 12) {
                 let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))

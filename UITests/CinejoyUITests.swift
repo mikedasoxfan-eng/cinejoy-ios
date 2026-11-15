@@ -182,44 +182,62 @@ final class CinejoyUITests: XCTestCase {
                        "Inline playback starts before fullscreen is attempted")
         let before = elapsed(status)
 
-        // Reveal AVKit's inline controls, then use its own fullscreen control.
-        let stage = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-        let enter = app.buttons.matching(NSPredicate(format: "label ==[c] 'Full Screen' OR label ==[c] 'Enter Full Screen' OR identifier ==[c] 'Full Screen'")).firstMatch
-        for _ in 0..<3 {
-            if enter.exists && enter.isHittable { break }
-            stage.tap()
-            _ = enter.waitForExistence(timeout: 2)
-        }
-        guard enter.exists, enter.isHittable else {
+        // The native stage is addressable and the hidden public page is not:
+        // its player controls must not be reachable behind the native video.
+        let stage = app.otherElements["native-player-stage"]
+        XCTAssertTrue(stage.waitForExistence(timeout: 5), "The native video stage is labelled for assistive technology and tests")
+        XCTAssertFalse(app.buttons["Fullscreen"].exists, "The hidden website's Fullscreen control is not exposed")
+        XCTAssertFalse(app.sliders["Seek Video"].exists, "The hidden website's scrubber is not exposed")
+
+        // Enter through the app's always-visible native control (AVKit's inline
+        // controls auto-hide, so they cannot be the only route).
+        let enter = app.buttons["native-fullscreen"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 5), "A native Full Screen control is present while playing")
+        guard enter.exists, enter.isEnabled, enter.isHittable else {
             capture("16-fullscreen-control-missing", app)
-            XCTFail("AVKit's fullscreen control must be available; see the attached screenshot and accessibility hierarchy.")
+            XCTFail("The native Full Screen control must be available; see the attached screenshot and accessibility hierarchy.")
             return
         }
         enter.tap()
-        sleep(3)
-        XCTAssertFalse(close.exists && close.isHittable, "AVKit fullscreen covers the app chrome")
-        capture("16-avkit-fullscreen", app)
+        let covered = NSPredicate(format: "exists == false OR hittable == false")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: covered, object: close)], timeout: 8), .completed,
+                       "The system fullscreen player covers the app chrome")
+        sleep(2)
+        capture("16-native-fullscreen", app)
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(4)
-        capture("16b-avkit-fullscreen-landscape", app)
+        capture("16b-native-fullscreen-landscape", app)
         XCUIDevice.shared.orientation = .portrait
         sleep(2)
 
-        // Leave fullscreen with AVKit's control, or its swipe-down gesture.
-        let exitLabels = NSPredicate(format: "label ==[c] 'Exit Full Screen' OR label ==[c] 'Done' OR label ==[c] 'Close' OR label ==[c] 'Minimize'")
+        // Leave with AVKit's own close control, or its swipe-down dismissal gesture.
+        let fullscreenPlayer = app.otherElements["native-fullscreen-player"]
+        let exitLabels = NSPredicate(format: "label ==[c] 'Close' OR label ==[c] 'Done' OR label ==[c] 'Dismiss' OR label ==[c] 'Exit Full Screen' OR label ==[c] 'Collapse'")
         let exit = app.buttons.matching(exitLabels).firstMatch
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        if exit.waitForExistence(timeout: 3), exit.isHittable { exit.tap() } else { app.swipeDown() }
-        XCTAssertTrue(close.waitForExistence(timeout: 8))
-        let hittable = NSPredicate(format: "hittable == true")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 8), .completed,
+        var exited = false
+        for _ in 0..<3 where !exited {
+            // Reveal AVKit's auto-hidden controls by tapping the fullscreen player itself.
+            let surface = fullscreenPlayer.exists ? fullscreenPlayer : app.windows.firstMatch
+            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            if exit.waitForExistence(timeout: 1.5), exit.isHittable { exit.tap(); exited = true }
+        }
+        if !exited {
+            let surface = fullscreenPlayer.exists ? fullscreenPlayer : app.windows.firstMatch
+            surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+                .press(forDuration: 0.05, thenDragTo: surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+        }
+        let hittable = NSPredicate(format: "exists == true AND hittable == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 10), .completed,
                        "The inline player and its close control return after fullscreen")
+        XCTAssertTrue(stage.waitForExistence(timeout: 5), "The inline native stage is back")
         let progressed = NSPredicate(format: "value BEGINSWITH 'Playing, '")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progressed, object: status)], timeout: 15), .completed,
                        "Playback is still running after leaving fullscreen")
         XCTAssertGreaterThanOrEqual(elapsed(status), before + 5, "The same AVPlayer kept its time through fullscreen (no restart from zero)")
         let diagnostics = close.value as? String ?? ""
         XCTAssertTrue(diagnostics.contains("external=false"), "External playback stays disabled: \(diagnostics)")
+        XCTAssertTrue(diagnostics.contains("fullscreen=false"), "The session left fullscreen state: \(diagnostics)")
+        XCTAssertFalse(app.buttons["Fullscreen"].exists, "The hidden website stays unexposed after fullscreen")
         capture("16c-after-fullscreen", app)
     }
 

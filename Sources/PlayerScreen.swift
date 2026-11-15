@@ -29,7 +29,8 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
             // A real, laid-out page lets the public website resolve its player.
             // The resolver is not extracted or copied into the app.
-            PlaybackResolverView(playback: playback, session: session, parked: session.websiteParked)
+            PlaybackResolverView(playback: playback, session: session, parked: session.websiteParked,
+                                 interactive: session.showProviderControls)
                 .id(attempt)
                 .opacity(session.showProviderControls ? 1 : 0.001)
                 .allowsHitTesting(session.showProviderControls)
@@ -109,8 +110,9 @@ private struct PlayerStage: View {
         ZStack {
             Color.black
             if let player = session.player {
-                NativeMoviePlayer(player: player, session: session)
-                    .accessibilityLabel(title.name)
+                // No accessibility modifiers on the representable itself: a label
+                // turned AVKit's view tree into one opaque element and hid its controls.
+                NativeMoviePlayer(player: player, session: session, captionsActive: session.selectedCaptionID != nil)
             }
             if session.isLoading && session.error == nil {
                 PlayerLoadingView(session: session, title: title)
@@ -118,6 +120,8 @@ private struct PlayerStage: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: session.isLoading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native-player-stage")
     }
 }
 
@@ -263,10 +267,28 @@ private struct PlayerTopBar: View {
             if session.showProviderControls, session.player != nil {
                 Button("Back to video", systemImage: "play.rectangle.fill") { session.returnToNativePlayer() }
                     .buttonStyle(.glassProminent).foregroundStyle(.black).lineLimit(1)
+            } else {
+                PlayerFullScreenButton(session: session)
             }
             PlayerOptionsMenu(session: session)
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+/// An always-visible, supported way into AVKit fullscreen. AVKit's inline
+/// controls auto-hide, so they cannot be the only route (and are not reliably
+/// discoverable by touch or assistive technology).
+private struct PlayerFullScreenButton: View {
+    let session: NativePlaybackSession
+
+    var body: some View {
+        Button("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") { session.enterFullScreen() }
+            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            .buttonStyle(.glass).buttonBorderShape(.circle)
+            .disabled(!session.canEnterFullScreen)
+            .accessibilityIdentifier("native-fullscreen")
+            .accessibilityHint("Plays the video full screen with the system player controls")
     }
 }
 
@@ -285,6 +307,8 @@ private struct PlayerRail: View {
                 Button("Back to video", systemImage: "play.rectangle.fill") { session.returnToNativePlayer() }
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .buttonStyle(.glassProminent).buttonBorderShape(.circle).foregroundStyle(.black)
+            } else {
+                PlayerFullScreenButton(session: session)
             }
             PlayerOptionsMenu(session: session)
             PlayerSaveButton(title: title)
@@ -416,7 +440,9 @@ private struct PlayerUpNext: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .disabled(playing)
+                // Not `.disabled`: that dimmed the current episode's title to grey.
+                .allowsHitTesting(!playing)
+                .accessibilityAddTraits(playing ? .isSelected : [])
                 .accessibilityLabel(playing ? "Now playing: episode \(episode.number), \(episode.name)" : "Play episode \(episode.number), \(episode.name)")
             }
         }
@@ -501,6 +527,8 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     }
     @ObservationIgnored var isFullScreen = false
     @ObservationIgnored var isPictureInPicture = false
+    /// The inline AVKit coordinator that can present the same AVPlayer full screen.
+    @ObservationIgnored weak var fullScreenPresenter: NativeMoviePlayer.Coordinator?
     /// Receives (path, seconds, duration, force). Ticks once per second; the library coalesces.
     @ObservationIgnored var onProgress: (@MainActor (String, Double, Double, Bool) -> Void)?
     @ObservationIgnored weak var webView: WKWebView?
@@ -525,6 +553,14 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     var selectedCaption: CaptionTrack? { captionTracks.first(where: { $0.id == selectedCaptionID }) }
     /// After AVPlayer is ready the hidden website no longer needs to be composited.
     var websiteParked: Bool { player != nil && !isLoading && error == nil && !showProviderControls }
+    var canEnterFullScreen: Bool { player != nil && !isLoading && error == nil && !showProviderControls }
+
+    /// Presents the system AVPlayerViewController modally on the same AVPlayer
+    /// (supported public API; time, audio and item are shared, nothing restarts).
+    func enterFullScreen() {
+        guard canEnterFullScreen else { return }
+        fullScreenPresenter?.presentFullScreen()
+    }
 
     func prepare(_ playback: Playback, webView: WKWebView) {
         stop()
@@ -794,6 +830,9 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
 struct NativeMoviePlayer: UIViewControllerRepresentable {
     let player: AVPlayer
     let session: NativePlaybackSession
+    /// The caption host is mounted only while a caption track is selected, so no
+    /// extra hosting view sits inside AVKit's overlay during normal playback.
+    var captionsActive = false
 
     func makeCoordinator() -> Coordinator { Coordinator(session: session) }
 
@@ -808,40 +847,152 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
         controller.entersFullScreenWhenPlaybackBegins = false
         controller.exitsFullScreenWhenPlaybackEnds = false
         controller.view.backgroundColor = .black
-        context.coordinator.attachCaptions(to: controller)
+        controller.view.accessibilityIdentifier = "native-inline-player"
+        context.coordinator.inline = controller
+        session.fullScreenPresenter = context.coordinator
+        context.coordinator.setCaptions(active: captionsActive)
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        if controller.player !== player { controller.player = player }
+        let coordinator = context.coordinator
+        // While the fullscreen controller owns the player, the inline one stays empty.
+        if !coordinator.isPresentingFullScreen, controller.player !== player { controller.player = player }
+        coordinator.setCaptions(active: captionsActive)
     }
 
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
-        coordinator.captionHost?.view.removeFromSuperview()
-        coordinator.captionHost = nil
+        coordinator.tearDown()
         controller.delegate = nil
         controller.player = nil
     }
 
     @MainActor final class Coordinator: NSObject, @MainActor AVPlayerViewControllerDelegate {
         let session: NativePlaybackSession
-        var captionHost: UIHostingController<NativeCaptionLayer>?
+        weak var inline: AVPlayerViewController?
+        private var inlineCaptions: UIHostingController<NativeCaptionLayer>?
+        private var fullScreen: AVPlayerViewController?
+        private var fullScreenCaptions: UIHostingController<NativeCaptionLayer>?
+        private var watchdog: Task<Void, Never>?
+        private var captionsActive = false
+        /// Sampled while the fullscreen controller is up (not while it is dismissing),
+        /// so a pause caused by the dismissal itself is not mistaken for the user's choice.
+        private var fullScreenWasPlaying = false
+        private var restoreAfterPictureInPicture = false
 
         init(session: NativePlaybackSession) { self.session = session }
 
+        var isPresentingFullScreen: Bool { fullScreen != nil }
+
+        // MARK: Captions
+
         /// Captions live in AVKit's content overlay (between the video and its
         /// controls), so they travel with the video into fullscreen.
-        func attachCaptions(to controller: AVPlayerViewController) {
-            guard let overlay = controller.contentOverlayView else { return }
+        private func makeCaptionHost(in controller: AVPlayerViewController) -> UIHostingController<NativeCaptionLayer>? {
+            guard let overlay = controller.contentOverlayView else { return nil }
             let host = UIHostingController(rootView: NativeCaptionLayer(session: session))
             host.view.backgroundColor = .clear
             host.view.isUserInteractionEnabled = false
+            host.view.accessibilityElementsHidden = true
             host.safeAreaRegions = []
             host.view.frame = overlay.bounds
             host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             overlay.addSubview(host.view)
-            captionHost = host
+            return host
         }
+
+        func setCaptions(active: Bool) {
+            captionsActive = active
+            if active {
+                if inlineCaptions == nil, let inline { inlineCaptions = makeCaptionHost(in: inline) }
+                if fullScreenCaptions == nil, let fullScreen { fullScreenCaptions = makeCaptionHost(in: fullScreen) }
+            } else {
+                inlineCaptions?.view.removeFromSuperview(); inlineCaptions = nil
+                fullScreenCaptions?.view.removeFromSuperview(); fullScreenCaptions = nil
+            }
+        }
+
+        // MARK: Fullscreen (supported: modal AVPlayerViewController on the same AVPlayer)
+
+        func presentFullScreen() {
+            guard fullScreen == nil, let inline, inline.viewIfLoaded?.window != nil,
+                  inline.presentedViewController == nil, let player = inline.player ?? session.player else { return }
+            let full = AVPlayerViewController()
+            full.modalPresentationStyle = .fullScreen
+            full.delegate = self
+            full.showsPlaybackControls = true
+            full.videoGravity = .resizeAspect
+            full.allowsPictureInPicturePlayback = true
+            full.entersFullScreenWhenPlaybackBegins = false
+            full.exitsFullScreenWhenPlaybackEnds = false
+            full.view.backgroundColor = .black
+            full.view.accessibilityIdentifier = "native-fullscreen-player"
+            let wasPlaying = player.timeControlStatus != .paused
+            fullScreenWasPlaying = wasPlaying
+            // One AVPlayer, moved between two system controllers: no new item,
+            // no seek, no second decode. Only one layer shows the picture.
+            inline.player = nil
+            full.player = player
+            fullScreen = full
+            if captionsActive { fullScreenCaptions = makeCaptionHost(in: full) }
+            session.isFullScreen = true
+            Perf.log.info("Native fullscreen: present (playing=\(wasPlaying))")
+            inline.present(full, animated: true) {
+                if wasPlaying, player.timeControlStatus == .paused { player.play() }
+            }
+            watchdog?.cancel()
+            watchdog = Task { [weak self, weak full] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard let self, let full, self.fullScreen === full else { return }
+                    if full.presentingViewController != nil {
+                        if !full.isBeingDismissed, !full.isBeingPresented, let player = full.player {
+                            self.fullScreenWasPlaying = player.timeControlStatus != .paused
+                        }
+                    } else if !full.isBeingPresented {
+                        // Dismissed by AVKit's close control or the swipe-down gesture.
+                        self.restoreInline(from: full)
+                        return
+                    }
+                }
+            }
+        }
+
+        private func restoreInline(from full: AVPlayerViewController) {
+            guard fullScreen === full else { return }
+            if session.isPictureInPicture {
+                // Picture in Picture is playing from this controller's layer; hand the
+                // player back once it ends rather than cutting PiP off.
+                restoreAfterPictureInPicture = true
+                return
+            }
+            watchdog?.cancel(); watchdog = nil
+            fullScreen = nil
+            restoreAfterPictureInPicture = false
+            fullScreenCaptions?.view.removeFromSuperview(); fullScreenCaptions = nil
+            let player = full.player
+            full.player = nil
+            full.delegate = nil
+            if let player, let inline { inline.player = player }
+            session.isFullScreen = false
+            let resumed = fullScreenWasPlaying
+            session.resumeAfterPresentation(wasPlaying: resumed)
+            Perf.log.info("Native fullscreen: restored inline (resumed=\(resumed))")
+        }
+
+        func tearDown() {
+            watchdog?.cancel(); watchdog = nil
+            setCaptions(active: false)
+            if let full = fullScreen {
+                fullScreen = nil
+                full.player = nil
+                full.delegate = nil
+                if full.presentingViewController != nil { full.dismiss(animated: false) }
+            }
+            if session.fullScreenPresenter === self { session.fullScreenPresenter = nil }
+        }
+
+        // MARK: AVPlayerViewControllerDelegate
 
         func playerViewController(_ playerViewController: AVPlayerViewController,
                                   willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
@@ -853,6 +1004,14 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
                                   willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
             let wasPlaying = playerViewController.player?.timeControlStatus != .paused
             let session = self.session
+            if let full = fullScreen, playerViewController === full {
+                fullScreenWasPlaying = wasPlaying
+                coordinator.animate(alongsideTransition: nil) { [weak self] context in
+                    guard !context.isCancelled else { return }
+                    MainActor.assumeIsolated { self?.restoreInline(from: full) }
+                }
+                return
+            }
             coordinator.animate(alongsideTransition: nil) { context in
                 guard !context.isCancelled else { return }
                 MainActor.assumeIsolated {
@@ -863,19 +1022,64 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
             }
         }
 
+        func playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart(_ playerViewController: AVPlayerViewController) -> Bool {
+            // Keep our modal fullscreen in place during PiP; its layer is the PiP source.
+            playerViewController !== fullScreen
+        }
+
         func playerViewControllerDidStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
             session.isPictureInPicture = true
         }
 
         func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
             session.isPictureInPicture = false
+            if restoreAfterPictureInPicture, let full = fullScreen, playerViewController === full {
+                restoreInline(from: full)
+            }
         }
 
         func playerViewController(_ playerViewController: AVPlayerViewController,
                                   restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-            // The inline player is still on screen inside this presentation.
+            // The inline player (or the fullscreen one) is still presented.
             completionHandler(true)
         }
+    }
+}
+
+/// SwiftUI owns this container's frame and alpha; the app owns the web view inside
+/// it. Hiding, touch handling and accessibility of the hidden public page are set
+/// here in UIKit, where SwiftUI does not reset them. (Toggling `isHidden` on the
+/// representable's own root view did not stick: the native QA hierarchy still showed
+/// the website's focused player controls behind the native video.)
+final class ResolverContainer: UIView {
+    let webView: WKWebView
+    var interactive = false { didSet { if interactive != oldValue { apply() } } }
+    var parked = false { didSet { if parked != oldValue { apply() } } }
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: webView.frame)
+        backgroundColor = .clear
+        webView.frame = bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(webView)
+        apply()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// The hidden page never receives touches unless provider controls are shown.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        interactive ? super.hitTest(point, with: event) : nil
+    }
+
+    private func apply() {
+        webView.isHidden = parked && !interactive
+        webView.isUserInteractionEnabled = interactive
+        webView.accessibilityElementsHidden = !interactive
+        accessibilityElementsHidden = !interactive
+        accessibilityElements = interactive ? nil : [Any]()
+        if !interactive { webView.endEditing(true) }
     }
 }
 
@@ -883,9 +1087,10 @@ struct PlaybackResolverView: UIViewRepresentable {
     let playback: Playback
     let session: NativePlaybackSession
     var parked = false
+    var interactive = false
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> ResolverContainer {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.allowsInlineMediaPlayback = true
@@ -916,17 +1121,22 @@ struct PlaybackResolverView: UIViewRepresentable {
         view.backgroundColor = .black
         view.scrollView.backgroundColor = .black
         view.scrollView.isScrollEnabled = false
+        let container = ResolverContainer(webView: view)
+        container.interactive = interactive
+        container.parked = parked
         session.prepare(playback, webView: view)
         view.load(URLRequest(url: URL(string: "https://cinejoy.pk\(playback.path)")!))
-        return view
+        return container
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
+    func updateUIView(_ container: ResolverContainer, context: Context) {
         context.coordinator.owner = self
-        if view.isHidden != parked { view.isHidden = parked }
+        container.interactive = interactive
+        container.parked = parked
     }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+    static func dismantleUIView(_ container: ResolverContainer, coordinator: Coordinator) {
+        let view = container.webView
         view.configuration.userContentController.removeScriptMessageHandler(forName: "stream")
         view.configuration.userContentController.removeScriptMessageHandler(forName: "watch")
         view.configuration.userContentController.removeScriptMessageHandler(forName: "captions")

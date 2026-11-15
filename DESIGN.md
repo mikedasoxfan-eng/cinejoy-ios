@@ -47,14 +47,26 @@ catalog loads. Cached data is not presented as live trending data.
 
 ## Player
 
-- Portrait: a glass top bar (close, title + status, options), a 16:9 AVKit stage,
-  then a panel with Save, Subtitles and Servers, plus Up Next (the current season, with
-  the playing episode marked) or the overview.
-- Landscape: the picture uses the full height. Close, options and save move to a
-  leading glass rail outside the video frame, so they never cover AVKit's controls.
-- AVKit's own fullscreen and Picture in Picture are first-class: the session
-  survives the presentation, captions are hosted in the player's content
-  overlay (so they appear in fullscreen), and playback continues on exit.
+- Portrait: a glass top bar (close, title + status, Full Screen, options), a 16:9
+  AVKit stage, then a panel with Save, Subtitles and Servers, plus Up Next (the current
+  season, with the playing episode marked) or the overview.
+- Landscape: the picture uses the full height. Close, Full Screen, options and save
+  move to a leading glass rail outside the video frame, so they never cover AVKit's
+  controls.
+- Full Screen is an always-visible glass control. AVKit's inline controls auto-hide,
+  so they are not the only route. The control presents the system
+  AVPlayerViewController modally on the same AVPlayer (public API; no new item, no
+  seek). AVKit's own close control or swipe-down returns the player inline with its
+  time and playing state. AVKit's inline fullscreen button keeps working too.
+- Picture in Picture is first-class in both presentations. Captions are hosted in the
+  content overlay of whichever controller shows the video, and only while a
+  caption track is on.
+- The hidden public page is never part of the interface: no touches, no
+  accessibility elements, no focus, and it is hidden once AVPlayer is ready. It
+  becomes visible and interactive only when the user opens Servers.
+- Never put accessibility modifiers on the AVKit representable itself. The stage
+  is a labelled container (`native-player-stage`) so AVKit's own controls stay
+  exposed.
 - Loading states name their real phase ("Finding a stream…", "Starting video…").
   After 12 s the state says the server is slow and offers another server. At 45 s
   it becomes an error with Try again and Choose another server.

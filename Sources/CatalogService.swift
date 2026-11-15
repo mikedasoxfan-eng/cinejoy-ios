@@ -429,9 +429,13 @@ struct ReaderHost: UIViewRepresentable {
         container.clipsToBounds = true
         container.isUserInteractionEnabled = false
         container.accessibilityElementsHidden = true
+        // An explicit empty list: the hidden pages expose nothing to VoiceOver,
+        // Switch Control or UI tests (they appeared as focused web content before).
+        container.accessibilityElements = []
         for reader in readers {
             reader.webView.frame = container.bounds
             reader.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            reader.webView.isUserInteractionEnabled = false
             reader.webView.accessibilityElementsHidden = true
             container.addSubview(reader.webView)
         }

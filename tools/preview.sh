@@ -14,10 +14,11 @@ if [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
     qa/player*) QA_FOCUS=player ;;
     qa/interface*) QA_FOCUS=interface ;;
     qa/handoff*) QA_FOCUS=handoff ;;
+    qa/fullscreen*) QA_FOCUS=fullscreen ;;
   esac
 fi
 case "$QA_FOCUS" in
-  full|player|interface|handoff) ;;
+  full|player|interface|handoff|fullscreen) ;;
   *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;
 esac
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
@@ -40,6 +41,8 @@ if [ "$QA_FOCUS" = player ]; then
   )
 elif [ "$QA_FOCUS" = handoff ]; then
   TEST_SELECTION=(-only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection)
+elif [ "$QA_FOCUS" = fullscreen ]; then
+  TEST_SELECTION=(-only-testing:CinejoyUITests/CinejoyUITests/testAVKitFullscreenRoundTripKeepsPlayback)
 elif [ "$QA_FOCUS" = interface ]; then
   TEST_SELECTION=(
     -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture
@@ -56,7 +59,7 @@ xcodebuild test -project Cinejoy.xcodeproj -scheme Cinejoy -configuration Debug 
   -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 180 CODE_SIGNING_ALLOWED=NO || TEST_RESULT=$?
 xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path dist/previews/ui-tests || true
-if [ "$QA_FOCUS" = player ] || [ "$QA_FOCUS" = handoff ]; then
+if [ "$QA_FOCUS" = player ] || [ "$QA_FOCUS" = handoff ] || [ "$QA_FOCUS" = fullscreen ]; then
   xcrun simctl shutdown "$DEVICE_ID" || true
   exit "$TEST_RESULT"
 fi
@@ -82,6 +85,9 @@ xcrun simctl ui "$DEVICE_ID" appearance dark
 xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass || true
 # Release the iPhone runtime before starting an iPad on the hosted runner.
 xcrun simctl shutdown "$DEVICE_ID" || true
+if [ "$QA_FOCUS" = interface ]; then
+  exit "$TEST_RESULT"
+fi
 IPAD_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPad" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true

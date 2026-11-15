@@ -50,10 +50,13 @@ log record actual compile and package times.
 
 For parallel native review without changing workflow permissions, dispatch the
 same workflow at a `qa/player*` branch for movie/fullscreen/TV checks, or a
-`qa/interface*` branch for discovery, library, live search and iPad/appearance
+`qa/interface*` branch for iPhone discovery, library, live search and appearance
 captures. Both branches can point to the exact same app commit. Manual dispatch
 at `main` runs the entire suite. On a Mac, `CINEJOY_QA_FOCUS=player` or
 `CINEJOY_QA_FOCUS=interface` selects the same subsets.
+`qa/fullscreen*` and `qa/handoff*` isolate fullscreen and episode switching.
+Full manual QA also captures iPad; interface iterations finish after iPhone
+captures so a second device's first boot does not delay visual review.
 Manual GitHub QA also starts Simulator boot during the device build, overlapping
 the first-boot setup with compilation.
 
