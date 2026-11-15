@@ -4,11 +4,17 @@ cd "$(dirname "$0")/.."
 command -v xcodegen >/dev/null || { echo 'Install XcodeGen: brew install xcodegen' >&2; exit 1; }
 BUILD_STARTED=$(date +%s)
 mkdir -p build dist
+python3 tools/restore_build_inputs.py
 bash tools/check_hls_proxy.sh
 ICON_KEY=$(cat tools/Icon.swift Resources/Brand/pwa-512.png | shasum -a 256 | cut -d ' ' -f 1)
-if [ "$(cat build/icon-key 2>/dev/null || true)" != "$ICON_KEY" ] || [ ! -f Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png ] || [ ! -f dist/AppIcon.png ]; then
+if [ "$(cat build/icon-key 2>/dev/null || true)" != "$ICON_KEY" ] || [ ! -f build/generated/AppIcon.png ]; then
   swift tools/Icon.swift Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+  mkdir -p build/generated
+  cp -p dist/AppIcon.png build/generated/AppIcon.png
   printf '%s' "$ICON_KEY" > build/icon-key
+else
+  cp -p build/generated/AppIcon.png Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+  cp -p build/generated/AppIcon.png dist/AppIcon.png
 fi
 xcodegen generate --use-cache
 COMPILE_STARTED=$(date +%s)
