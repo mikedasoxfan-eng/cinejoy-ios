@@ -30,6 +30,8 @@ with zipfile.ZipFile(ipa) as archive:
     assert info["MinimumOSVersion"].startswith("26."), "Unexpected minimum iOS version"
     assert "NSLocalNetworkUsageDescription" not in info, "Local-network permission was not removed"
     assert info.get("UIBackgroundModes") == ["audio"], "Media background mode is missing"
+    assert root + "CaptionQAFixture.mp4" not in archive.namelist(), "Simulator-only caption fixture leaked into the device IPA"
+    assert b"Subtitle renderer QA" not in binary, "Debug caption harness leaked into the Release executable"
     for resource in ["CatalogSeed.json", "CatalogExtraction.js", "PlayerEnvironment.js", "PlayerIntegration.js", "PlayerDiagnostics.js", "PlayerStreamObserver.js", "NativeCaptionObserver.js", "Assets.car"]:
         assert root + resource in archive.namelist(), f"Missing packaged resource: {resource}"
     assert info.get("NSAppTransportSecurity") == {"NSExceptionDomains": {"127.0.0.1": {"NSExceptionAllowsInsecureHTTPLoads": True}}}, "Expected only the local media transport exception"
@@ -42,6 +44,7 @@ with zipfile.ZipFile(ipa) as archive:
         file=str(ipa.resolve()), bytes=ipa.stat().st_size,
         sha256=hashlib.sha256(ipa.read_bytes()).hexdigest(),
         bundle_identifier=info["CFBundleIdentifier"], minimum_ios=info["MinimumOSVersion"],
+        version=info["CFBundleShortVersionString"], build=info["CFBundleVersion"],
         architecture="arm64", platform="iOS device", resources_verified=True,
         casting_control_removed=True, local_network_permission=False,
         signed=any(name.startswith(root + "_CodeSignature/") for name in archive.namelist()),

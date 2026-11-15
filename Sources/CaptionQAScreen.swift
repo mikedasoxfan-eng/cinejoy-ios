@@ -33,6 +33,7 @@ struct CaptionQAScreen: View {
         }
         .padding().preferredColorScheme(.dark)
         .task {
+            guard session.player == nil else { return }
             guard let url = Bundle.main.url(forResource: "CaptionQAFixture", withExtension: "mp4") else { return }
             session.prepareCaptionQA(url: url)
             session.receiveCaptions(["tracks": [["id": "qa-en", "label": "English QA", "language": "en", "cues": [

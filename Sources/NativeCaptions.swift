@@ -119,10 +119,19 @@ struct NativeCaptionLayer: View {
     var body: some View {
         GeometryReader { geometry in
             if let track = session.selectedCaption {
-                let scale = min(max(geometry.size.width / 393, 1), 1.7)
+                // AVKit's overlay fills the whole controller, including portrait
+                // letterboxing. Keep cues on the fitted video picture itself.
+                let source = session.player?.currentItem?.presentationSize ?? .zero
+                let fit = source.width > 0 && source.height > 0
+                    ? min(geometry.size.width / source.width, geometry.size.height / source.height) : 1
+                let picture = source.width > 0 && source.height > 0
+                    ? CGSize(width: source.width * fit, height: source.height * fit) : geometry.size
+                let scale = min(max(picture.width / 393, 1), 1.7)
                 NativeCaptionOverlay(clock: session.captionClock, track: track,
                                      font: .system(size: baseSize * scale, weight: .semibold),
-                                     bottomInset: max(20, geometry.size.height * 0.12))
+                                     bottomInset: max(20, picture.height * 0.12))
+                    .frame(width: picture.width, height: picture.height)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
         }
         .allowsHitTesting(false)

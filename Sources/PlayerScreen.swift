@@ -1000,6 +1000,7 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
             inline.present(container, animated: true) {
                 // Moving the player between layers must not change its state.
                 if wasPlaying, player.timeControlStatus == .paused { player.play() }
+                else if !wasPlaying { player.pause() }
             }
         }
 
@@ -1061,7 +1062,10 @@ struct NativeMoviePlayer: UIViewControllerRepresentable {
                                   willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
             // AVKit's own fullscreen route (from the inline player, or from the child inside
             // the app's container). The app's container stays up in the latter case.
-            let wasPlaying = playerViewController.player?.timeControlStatus != .paused
+            // The app-owned container has its own close/restore path. A detached
+            // AVKit child can report nil here; nil must never mean "was playing".
+            guard !(playerViewController.parent is NativeFullScreenContainer) else { return }
+            let wasPlaying = playerViewController.player.map { $0.timeControlStatus != .paused } ?? false
             let session = self.session
             let insideContainer = playerViewController === fullScreen?.playerController
             coordinator.animate(alongsideTransition: nil) { context in

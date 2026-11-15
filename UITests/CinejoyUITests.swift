@@ -41,6 +41,8 @@ final class CinejoyUITests: XCTestCase {
         app.buttons["native-fullscreen-return"].tap()
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(app.buttons["Subtitles"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["caption-qa-status"].label, "Paused", "Returning preserves the paused state")
+        XCTAssertEqual(Double(app.staticTexts["caption-qa-clock"].label) ?? -1, 15, accuracy: 0.3, "Returning preserves the caption clock")
         app.buttons["Subtitles"].tap(); app.buttons["Off"].tap()
         XCTAssertTrue(caption.waitForNonExistence(timeout: 5), "Off removes the native caption overlay")
         capture("captions-05-off", app)
@@ -71,7 +73,7 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertTrue(close.waitForExistence(timeout: 8))
         app.buttons["Playback options"].tap(); app.buttons["Find subtitles"].tap()
         let web = app.webViews.firstMatch
-        let english = web.buttons.matching(NSPredicate(format: "label MATCHES %@", "en English [0-9]+" )).firstMatch
+        let english = web.buttons.matching(NSPredicate(format: "label MATCHES %@", "en English\\s+[0-9]+" )).firstMatch
         if !english.waitForExistence(timeout: 20) {
             let subtitles = web.buttons["Subtitles"]
             XCTAssertTrue(subtitles.waitForExistence(timeout: 20)); subtitles.tap()
@@ -84,11 +86,12 @@ final class CinejoyUITests: XCTestCase {
                        "The actual provider's loaded cues reach the native session")
         capture("captions-07-live-provider", app)
         app.buttons["Back to video"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Playback options"].waitForExistence(timeout: 5))
+        XCTAssertTrue((close.value as? String ?? "").contains("captionSelected=true"), "The provider's selected track is already selected natively")
         app.buttons["Playback options"].tap(); app.buttons["Subtitles"].tap()
         let nativeTrack = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "hdpopcorns")).firstMatch
         XCTAssertTrue(nativeTrack.waitForExistence(timeout: 5), "The live English track appears in the native subtitle menu")
         capture("captions-08-live-native-menu", app)
-        XCTAssertTrue((close.value as? String ?? "").contains("captionSelected=true"), "The provider's selected track is already selected natively")
         nativeTrack.tap()
     }
 
