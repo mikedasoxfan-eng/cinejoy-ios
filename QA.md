@@ -96,6 +96,14 @@ of seasons 1, 2, 3, 1, 2; those reads are separate from iOS WebKit verification.
 Ten local regression checks pass. A fresh macOS build and Simulator run are still
 required; the hosted runner was unavailable for the latest candidate.
 
+Run `43714630168` subsequently built the device IPA and passed four native test
+flows: browsing/persistence, actual playback with resumed progress and history
+deletion, live search/no-results, and Settings appearance. Season 2 was the sole
+failure. Its root cause was exact URL-query validation rejecting the site's
+`?season=2` navigation. The next candidate opens the desired season query directly
+and removes the menu automation and desktop-layout overrides. Its native season
+test and settled landscape capture are pending the Codemagic QA workflow.
+
 Catalog and artwork originate in Cinejoy's public pages and TMDB. Fixtures and
 the bundled snapshot contain public descriptive metadata, not user accounts,
 API credentials, media files or stream-resolver results.

@@ -81,7 +81,7 @@ struct TitleDetailScreen: View {
                         }
                     } label: { Label("Season \(season)", systemImage: "chevron.down") }
                         .buttonStyle(.glass)
-                        .accessibilityHint(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? episodeDiagnostic : "")
+                        .accessibilityValue(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? episodeDiagnostic : "")
                 } else { Text("Season \(season)").foregroundStyle(.secondary) }
             }
             if isLoadingEpisodes { ProgressView("Loading episodes…").padding(.vertical) }

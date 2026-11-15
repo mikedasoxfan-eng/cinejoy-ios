@@ -131,8 +131,13 @@ final class CinejoyUITests: XCTestCase {
         XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
         sleep(8)
         XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(3)
+        XCTAssertGreaterThan(app.frame.width, app.frame.height, "Landscape layout has settled")
+        XCTAssertTrue(app.buttons["Close player"].isHittable)
+        XCTAssertTrue(app.buttons["Save to Library"].isHittable)
         capture("11b-player-landscape", app)
         XCUIDevice.shared.orientation = .portrait
+        sleep(2)
         let savedSeconds = elapsed(status)
         XCTAssertGreaterThanOrEqual(savedSeconds, 3)
         app.buttons["Close player"].tap()

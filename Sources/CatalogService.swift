@@ -14,13 +14,10 @@ import SwiftUI
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.defaultWebpagePreferences.preferredContentMode = .desktop
-        if let url = Bundle.main.url(forResource: "CatalogEnvironment", withExtension: "js"),
-           let source = try? String(contentsOf: url, encoding: .utf8) {
-            configuration.userContentController.addUserScript(WKUserScript(
-                source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
-        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1280, height: 932), configuration: configuration)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='[role=dialog][aria-labelledby=notice-title]{display:none!important}';document.head.append(s)});",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 430, height: 932), configuration: configuration)
         super.init()
         webView.navigationDelegate = self
     }
@@ -35,7 +32,17 @@ import SwiftUI
                 webView.loadHTMLString("", baseURL: nil)
             }
         }
-        guard let url = URL(string: "https://cinejoy.pk\(path)") else { throw URLError(.badURL) }
+        guard var components = URLComponents(string: "https://cinejoy.pk\(path)") else { throw URLError(.badURL) }
+        if let season {
+            // The public page reads its initial season from this query and writes
+            // the same query when its selector changes. Start at the requested
+            // season so exact URL validation remains valid after selection.
+            var items = components.queryItems ?? []
+            items.removeAll { $0.name == "season" }
+            items.append(URLQueryItem(name: "season", value: String(season)))
+            components.queryItems = items
+        }
+        guard let url = components.url else { throw URLError(.badURL) }
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 25))
         var last: CatalogPage?
         for attempt in 0..<50 {
@@ -49,12 +56,6 @@ import SwiftUI
             if path.hasPrefix("/search"), url.query != nil {
                 let stillShowingSuggestions = (try? await webView.evaluateJavaScript("[...document.querySelectorAll('h2')].some(h=>h.textContent.trim()==='Trending Today')")) as? Bool
                 if stillShowingSuggestions == true { continue }
-            }
-            if let season, attempt > 4 {
-                if let scriptURL = Bundle.main.url(forResource: "SeasonSelection", withExtension: "js"),
-                   let source = try? String(contentsOf: scriptURL, encoding: .utf8) {
-                    _ = try? await webView.evaluateJavaScript(source.replacingOccurrences(of: "__SEASON__", with: String(season)))
-                }
             }
             guard let scriptURL = Bundle.main.url(forResource: "CatalogExtraction", withExtension: "js"),
                   let script = try? String(contentsOf: scriptURL, encoding: .utf8),
@@ -74,7 +75,8 @@ import SwiftUI
         }
         if let last { return last }
         if let season {
-            diagnostic = (try? await webView.evaluateJavaScript("JSON.stringify({width:innerWidth,heading:document.querySelector('h2 button')?.textContent,expanded:document.querySelector('h2 button')?.getAttribute('aria-expanded'),dialogs:[...document.querySelectorAll('[role=dialog]')].map(d=>({title:d.querySelector('h3')?.textContent,wheel:!!d.querySelector('.wheel')})),episodes:[...document.links].filter(a=>a.pathname.startsWith('/watch/tv/')).slice(0,3).map(a=>a.pathname)})")) as? String
+            diagnostic = (try? await webView.evaluateJavaScript("JSON.stringify({url:location.href,width:innerWidth,heading:document.querySelector('h2 button')?.textContent,expanded:document.querySelector('h2 button')?.getAttribute('aria-expanded'),dialogs:[...document.querySelectorAll('[role=dialog]')].map(d=>({title:d.querySelector('h3')?.textContent,wheel:!!d.querySelector('.wheel')})),episodes:[...document.links].filter(a=>a.pathname.startsWith('/watch/tv/')).slice(0,3).map(a=>a.pathname)})")) as? String
+            diagnostic = "Expected \(url.absoluteString); \(diagnostic ?? "DOM unavailable")"
             print("Catalog season \(season) timeout: \(diagnostic ?? "DOM unavailable")")
         }
         throw URLError(.timedOut)
@@ -140,17 +142,16 @@ enum TitleInfoService {
 struct ReaderHost: UIViewRepresentable {
     let reader: PageReader
     func makeUIView(context: Context) -> UIView {
-        // Catalog extraction has no visible web UI. Give its backing page a stable
-        // desktop viewport so season selection uses the ordinary menu rather than
-        // a touch wheel whose animation depends on a foreground WebKit viewport.
-        let container = UIView(frame: .zero)
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 430, height: 932))
         container.clipsToBounds = true
         container.accessibilityElementsHidden = true
-        reader.webView.frame = CGRect(x: 0, y: 0, width: 1280, height: 932)
-        reader.webView.autoresizingMask = []
+        reader.webView.frame = CGRect(x: 0, y: 0, width: 430, height: 932)
+        reader.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         reader.webView.accessibilityElementsHidden = true
         container.addSubview(reader.webView)
         return container
     }
-    func updateUIView(_ view: UIView, context: Context) {}
+    func updateUIView(_ view: UIView, context: Context) {
+        if view.bounds.width > 0, view.bounds.height > 0 { reader.webView.frame = view.bounds }
+    }
 }
