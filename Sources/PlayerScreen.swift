@@ -11,14 +11,16 @@ struct PlayerScreen: View {
     @State private var attempt = 0
     @State private var seconds = 0.0
     @State private var isPaused = true
+    @State private var isBuffering = false
     @State private var diagnostics = "Waiting for video"
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error, diagnostics: $diagnostics) { path, elapsed, duration, paused in
+            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error, diagnostics: $diagnostics) { path, elapsed, duration, paused, buffering in
                 seconds = elapsed
                 isPaused = paused
+                isBuffering = buffering
                 library.record(playback.title, path: path, seconds: elapsed, duration: duration)
             }
             .id(attempt).ignoresSafeArea(edges: .bottom)
@@ -48,7 +50,7 @@ struct PlayerScreen: View {
                 Text(playback.title.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     .padding(.horizontal, 16).padding(.vertical, 12).glassEffect()
                     .accessibilityIdentifier("player-status")
-                    .accessibilityValue("\(isPaused ? "Paused" : "Playing"), \(Int(seconds)) seconds elapsed")
+                    .accessibilityValue("\(isLoading ? "Preparing" : isBuffering ? "Buffering" : isPaused ? "Paused" : "Playing"), \(Int(seconds)) seconds elapsed")
                     .accessibilityHint(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? diagnostics : "")
                 Spacer()
                 Button(library.contains(playback.title) ? "Remove from Library" : "Save to Library",
@@ -68,7 +70,7 @@ struct PlaybackWebView: UIViewRepresentable {
     @Binding var isLoading: Bool
     @Binding var error: String?
     @Binding var diagnostics: String
-    let onProgress: (String, Double, Double, Bool) -> Void
+    let onProgress: (String, Double, Double, Bool, Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -155,10 +157,12 @@ struct PlaybackWebView: UIViewRepresentable {
                   let duration = value["duration"] as? Double,
                   seconds.isFinite, duration.isFinite, seconds >= 0, duration >= 0,
                   let path = value["path"] as? String, path.hasPrefix("/watch/") else { return }
-            owner.onProgress(path, seconds, duration, value["paused"] as? Bool ?? true)
+            let paused = value["paused"] as? Bool ?? true
+            let ready = value["readyState"] as? Int ?? 0
+            owner.onProgress(path, seconds, duration, paused, !paused && ready < 3)
             owner.isLoading = false
             loadingTimeout?.cancel()
-            if (value["readyState"] as? Int ?? 0) >= 2 { owner.error = nil }
+            if ready >= 2 { owner.error = nil }
             owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration)) \(value["networkTrace"] ?? "")"
         }
 
