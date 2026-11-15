@@ -87,6 +87,7 @@ struct SearchScreen: View {
         }
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Movies and TV shows")
+        .scrollDismissesKeyboard(.interactively)
         .task(id: query) {
             do { try await Task.sleep(for: .milliseconds(450)); try Task.checkCancellation(); await search() }
             catch {}
@@ -101,7 +102,7 @@ struct SearchScreen: View {
         error = nil
         results = catalog.titles.filter { $0.name.localizedCaseInsensitiveContains(term) }
         defer { if query.trimmingCharacters(in: .whitespacesAndNewlines) == term { isLoading = false } }
-        if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" { return }
+        if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1", ProcessInfo.processInfo.environment["CINEJOY_LIVE_SEARCH"] != "1" { return }
         var components = URLComponents()
         components.path = "/search"
         components.queryItems = [URLQueryItem(name: "q", value: term)]

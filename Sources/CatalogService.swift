@@ -37,10 +37,10 @@ import SwiftUI
                 if stillShowingSuggestions == true { continue }
             }
             if let season, attempt > 4 {
-                let script = """
-                (()=>{const wanted='Season \(season)';const heading=[...document.querySelectorAll('h2 button')].find(x=>/^Season \\d+$/.test(x.textContent.trim()));if(heading?.textContent.trim()===wanted)return;const choice=[...document.querySelectorAll('button,[role=option],[role=menuitem]')].find(x=>x.textContent.trim()===wanted);if(choice)choice.click();else heading?.click()})()
-                """
-                _ = try? await webView.evaluateJavaScript(script)
+                if let scriptURL = Bundle.main.url(forResource: "SeasonSelection", withExtension: "js"),
+                   let source = try? String(contentsOf: scriptURL, encoding: .utf8) {
+                    _ = try? await webView.evaluateJavaScript(source.replacingOccurrences(of: "__SEASON__", with: String(season)))
+                }
             }
             guard let scriptURL = Bundle.main.url(forResource: "CatalogExtraction", withExtension: "js"),
                   let script = try? String(contentsOf: scriptURL, encoding: .utf8),

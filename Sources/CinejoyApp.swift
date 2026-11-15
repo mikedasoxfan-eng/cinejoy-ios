@@ -10,7 +10,7 @@ import SwiftUI
             RootView()
                 .environment(library)
                 .environment(catalog)
-                .tint(Color.accentColor)
+                .tint(Color("AccentColor"))
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
     }
@@ -37,11 +37,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            if let entry = library.history.first, entry.fraction < 0.95 {
-                ResumeAccessory(entry: entry)
-            }
-        }
+        .modifier(ResumeBarModifier(entry: library.history.first.flatMap { $0.fraction < 0.95 ? $0 : nil }))
         .sheet(isPresented: $library.showSettings) { SettingsScreen() }
         .fullScreenCover(item: $library.playback) { playback in
             PlayerScreen(playback: playback)
@@ -56,6 +52,19 @@ struct RootView: View {
         .task {
             if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] != "1" { await catalog.refresh() }
         }
+    }
+}
+
+struct ResumeBarModifier: ViewModifier {
+    let entry: WatchEntry?
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 26.2, *) {
+            content.tabViewBottomAccessory(isEnabled: entry != nil) {
+                if let entry { ResumeAccessory(entry: entry) }
+            }
+        } else if let entry {
+            content.tabViewBottomAccessory { ResumeAccessory(entry: entry) }
+        } else { content }
     }
 }
 

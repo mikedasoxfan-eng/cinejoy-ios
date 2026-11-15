@@ -28,7 +28,7 @@ struct PlayerScreen: View {
                     ContentUnavailableView("Playback unavailable", systemImage: "play.slash", description: Text(error))
                     Button("Try again", systemImage: "arrow.clockwise") {
                         self.error = nil; isLoading = true; attempt += 1
-                    }.buttonStyle(.glassProminent)
+                    }.buttonStyle(.glassProminent).foregroundStyle(.black)
                 }.padding(24)
             }
         }

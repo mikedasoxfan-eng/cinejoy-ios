@@ -56,6 +56,18 @@ for event in events:
 seen = {t["kind"] + str(t["tmdbID"]) for titles in groups.values() for t in titles}
 curated = [t for t in individuals if t["kind"] + str(t["tmdbID"]) not in seen]
 if curated: groups["Worth another look"] = curated
+detail = json.loads((root.parent / "cinejoy-analysis" / "detail-capture.json").read_text(encoding="utf-8"))
+for event in detail["normalized_result"]["events"]["items"]:
+    if event["kind"] == "network-content" and event["phase"] == "response" and event["body"]["state"] == "captured":
+        try:
+            item = json.loads(base64.b64decode(event["body"]["content"]))
+            if isinstance(item, dict) and item.get("id") == 27205 and item.get("title") == "Inception":
+                groups.setdefault("Worth another look", []).insert(0, title(item, "movie"))
+                break
+        except (ValueError, KeyError):
+            pass
+order = ["Movie night", "Shows to get into", "Great movies", "Great television", "Worth another look"]
+groups = {name: groups[name] for name in order if name in groups}
 payload = dict(titles=[], shelves=[dict(name=name, titles=titles) for name, titles in groups.items() if titles], episodes=[], seasons=[])
 destination = root / "Resources" / "CatalogSeed.json"
 destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -3,6 +3,7 @@ import SwiftUI
 struct TitleDetailScreen: View {
     let title: Title
     @Environment(LibraryStore.self) private var library
+    @Environment(\.colorScheme) private var colorScheme
     @State private var info: SupplementalInfo?
     @State private var episodes: [Episode] = []
     @State private var seasons: [Int] = [1]
@@ -14,9 +15,12 @@ struct TitleDetailScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Artwork(url: title.heroURL)
-                    .frame(height: 310).frame(maxWidth: .infinity)
-                    .clipShape(.rect(cornerRadius: 24))
+                GeometryReader { geometry in
+                    Artwork(url: title.heroURL)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipShape(.rect(cornerRadius: 24))
+                }
+                    .frame(height: 310)
                     .padding(.horizontal, 16)
                 VStack(alignment: .leading, spacing: 18) {
                     Text(title.name).font(.largeTitle.bold()).fixedSize(horizontal: false, vertical: true)
@@ -32,6 +36,7 @@ struct TitleDetailScreen: View {
                         HStack(spacing: 12) {
                             Button("Play", systemImage: "play.fill") { library.play(title) }
                                 .buttonStyle(.glassProminent).controlSize(.large)
+                                .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
                             Button(library.contains(title) ? "Saved" : "Save", systemImage: library.contains(title) ? "bookmark.fill" : "bookmark") { library.toggle(title) }
                                 .buttonStyle(.glass).controlSize(.large)
                                 .contentTransition(.symbolEffect(.replace))

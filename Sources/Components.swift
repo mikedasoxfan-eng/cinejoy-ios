@@ -93,9 +93,11 @@ struct TitleGrid: View {
 struct FeaturedTitle: View {
     let title: Title
     @Environment(LibraryStore.self) private var library
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Artwork(url: title.heroURL).frame(height: 440)
+        GeometryReader { geometry in
+          ZStack(alignment: .bottomLeading) {
+            Artwork(url: title.heroURL).frame(width: geometry.size.width, height: geometry.size.height)
             LinearGradient(colors: [.clear, .black.opacity(0.12), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 12) {
                 Text(title.name).font(.largeTitle.bold()).lineLimit(2)
@@ -105,15 +107,19 @@ struct FeaturedTitle: View {
                     HStack(spacing: 12) {
                         Button("Play", systemImage: "play.fill") { library.play(title) }
                             .buttonStyle(.glassProminent).controlSize(.large)
+                            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
                         NavigationLink(value: title) { Label("Details", systemImage: "info.circle") }
                             .buttonStyle(.glass).controlSize(.large)
                     }
                 }
             }
             .foregroundStyle(.white).padding(24)
+            .frame(width: geometry.size.width, alignment: .leading)
+          }
+          .frame(width: geometry.size.width, height: geometry.size.height)
+          .clipShape(.rect(cornerRadius: 30))
         }
         .frame(height: 440)
-        .clipShape(.rect(cornerRadius: 30))
         .padding(.horizontal, 16)
     }
 }

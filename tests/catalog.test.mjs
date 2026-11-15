@@ -54,3 +54,12 @@ test('bundled catalog has real usable data and no credentials or resolver URLs',
   assert.ok(page.shelves.flatMap(x => x.titles).length >= 100);
   assert.doesNotMatch(text, /api_key|cinejoy_token|Bearer |master\.m3u8|\/g\?/);
 });
+
+test('season selection matches the actual menu label without its episode-count suffix', () => {
+  const { document } = parseHTML('<html><body><h2><button aria-expanded="true">Season 1</button></h2><button class="menu-item"><span class="menu-item-label">Season 2</span> <span>13 episodes</span></button></body></html>');
+  let selected = false;
+  document.querySelector('.menu-item').addEventListener('click', () => { selected = true; });
+  const script = readFileSync(new URL('../Resources/SeasonSelection.js', import.meta.url), 'utf8').replace('__SEASON__', '2');
+  vm.runInNewContext(script, { document });
+  assert.equal(selected, true);
+});
