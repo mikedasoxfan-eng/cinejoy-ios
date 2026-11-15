@@ -11,6 +11,7 @@ struct TitleDetailScreen: View {
     @State private var season = 1
     @State private var isLoadingEpisodes = false
     @State private var episodeError: String?
+    @State private var episodeDiagnostic = ""
     @State private var reader = PageReader()
 
     var body: some View {
@@ -80,6 +81,7 @@ struct TitleDetailScreen: View {
                         }
                     } label: { Label("Season \(season)", systemImage: "chevron.down") }
                         .buttonStyle(.glass)
+                        .accessibilityHint(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? episodeDiagnostic : "")
                 } else { Text("Season \(season)").foregroundStyle(.secondary) }
             }
             if isLoadingEpisodes { ProgressView("Loading episodes…").padding(.vertical) }
@@ -106,6 +108,7 @@ struct TitleDetailScreen: View {
     @MainActor private func loadEpisodes() async {
         isLoadingEpisodes = true
         episodeError = nil
+        episodeDiagnostic = ""
         episodes = []
         defer { isLoadingEpisodes = false }
         do {
@@ -116,6 +119,7 @@ struct TitleDetailScreen: View {
             if episodes.isEmpty { episodeError = "Episode information is unavailable. Play starts with the first episode." }
         } catch is CancellationError {} catch {
             episodeError = "Couldn’t load episodes. Check your connection and try again."
+            episodeDiagnostic = reader.diagnostic ?? "DOM unavailable"
         }
     }
 }

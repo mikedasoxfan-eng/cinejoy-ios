@@ -7,22 +7,27 @@ import SwiftUI
 // account token, protected resolver implementation, or private endpoint is needed.
 @MainActor final class PageReader: NSObject, WKNavigationDelegate {
     let webView: WKWebView
+    private(set) var diagnostic: String?
     private var generation = UUID()
 
     override init() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.userContentController.addUserScript(WKUserScript(
-            source: "document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='[role=dialog][aria-labelledby=notice-title]{display:none!important}';document.head.append(s)});",
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 430, height: 932), configuration: configuration)
+        configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+        if let url = Bundle.main.url(forResource: "CatalogEnvironment", withExtension: "js"),
+           let source = try? String(contentsOf: url, encoding: .utf8) {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1280, height: 932), configuration: configuration)
         super.init()
         webView.navigationDelegate = self
     }
 
     func read(path: String, season: Int? = nil) async throws -> CatalogPage {
         let requestID = UUID()
+        diagnostic = nil
         generation = requestID
         defer {
             if requestID == generation {
@@ -68,6 +73,10 @@ import SwiftUI
             }
         }
         if let last { return last }
+        if let season {
+            diagnostic = (try? await webView.evaluateJavaScript("JSON.stringify({width:innerWidth,heading:document.querySelector('h2 button')?.textContent,expanded:document.querySelector('h2 button')?.getAttribute('aria-expanded'),dialogs:[...document.querySelectorAll('[role=dialog]')].map(d=>({title:d.querySelector('h3')?.textContent,wheel:!!d.querySelector('.wheel')})),episodes:[...document.links].filter(a=>a.pathname.startsWith('/watch/tv/')).slice(0,3).map(a=>a.pathname)})")) as? String
+            print("Catalog season \(season) timeout: \(diagnostic ?? "DOM unavailable")")
+        }
         throw URLError(.timedOut)
     }
 
@@ -130,6 +139,18 @@ enum TitleInfoService {
 // This inert, inaccessible backing view supplies catalog data to native screens.
 struct ReaderHost: UIViewRepresentable {
     let reader: PageReader
-    func makeUIView(context: Context) -> WKWebView { reader.webView }
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func makeUIView(context: Context) -> UIView {
+        // Catalog extraction has no visible web UI. Give its backing page a stable
+        // desktop viewport so season selection uses the ordinary menu rather than
+        // a touch wheel whose animation depends on a foreground WebKit viewport.
+        let container = UIView(frame: .zero)
+        container.clipsToBounds = true
+        container.accessibilityElementsHidden = true
+        reader.webView.frame = CGRect(x: 0, y: 0, width: 1280, height: 932)
+        reader.webView.autoresizingMask = []
+        reader.webView.accessibilityElementsHidden = true
+        container.addSubview(reader.webView)
+        return container
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
 }

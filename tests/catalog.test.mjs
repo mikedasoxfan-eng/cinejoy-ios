@@ -87,3 +87,14 @@ test('season selection dismisses the announcement through its own control first'
   assert.equal(dismissed, true);
   assert.equal(opened, false);
 });
+
+test('backing catalog page uses the observed desktop menu queries on touch devices', () => {
+  const { document } = parseHTML('<html><head></head><body></body></html>');
+  const source = readFileSync(new URL('../Resources/CatalogEnvironment.js', import.meta.url), 'utf8');
+  const window = { matchMedia: query => ({ media: query, matches: query.includes('coarse') || query === '(prefers-color-scheme: dark)' }) };
+  vm.runInNewContext(source, { document, window });
+  assert.equal(window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches, true);
+  assert.equal(window.matchMedia('(hover: none) and (pointer: coarse), (max-width: 640px)').matches, false);
+  assert.equal(window.matchMedia('(prefers-color-scheme: dark)').matches, true);
+  assert.equal(window.matchMedia('(prefers-reduced-motion: reduce)').matches, false);
+});

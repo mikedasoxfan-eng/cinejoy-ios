@@ -11,11 +11,12 @@ struct PlayerScreen: View {
     @State private var attempt = 0
     @State private var seconds = 0.0
     @State private var isPaused = true
+    @State private var diagnostics = "Waiting for video"
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error) { path, elapsed, duration, paused in
+            PlaybackWebView(playback: playback, isLoading: $isLoading, error: $error, diagnostics: $diagnostics) { path, elapsed, duration, paused in
                 seconds = elapsed
                 isPaused = paused
                 library.record(playback.title, path: path, seconds: elapsed, duration: duration)
@@ -47,6 +48,7 @@ struct PlayerScreen: View {
                     .padding(.horizontal, 16).padding(.vertical, 12).glassEffect()
                     .accessibilityIdentifier("player-status")
                     .accessibilityValue("\(isPaused ? "Paused" : "Playing"), \(Int(seconds)) seconds elapsed")
+                    .accessibilityHint(ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" ? diagnostics : "")
                 Spacer()
                 Button(library.contains(playback.title) ? "Remove from Library" : "Save to Library",
                        systemImage: library.contains(playback.title) ? "bookmark.fill" : "bookmark") { library.toggle(playback.title) }
@@ -64,6 +66,7 @@ struct PlaybackWebView: UIViewRepresentable {
     let playback: Playback
     @Binding var isLoading: Bool
     @Binding var error: String?
+    @Binding var diagnostics: String
     let onProgress: (String, Double, Double, Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -130,8 +133,10 @@ struct PlaybackWebView: UIViewRepresentable {
                   let value = message.body as? [String: Any],
                   let seconds = value["seconds"] as? Double,
                   let duration = value["duration"] as? Double,
+                  seconds.isFinite, duration.isFinite, seconds >= 0, duration >= 0,
                   let path = value["path"] as? String, path.hasPrefix("/watch/") else { return }
             owner.onProgress(path, seconds, duration, value["paused"] as? Bool ?? true)
+            owner.diagnostics = "ready=\(value["readyState"] ?? "?") network=\(value["networkState"] ?? "?") mediaError=\(value["error"] ?? "?") play=\(value["playFailure"] ?? "?") duration=\(Int(duration))"
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
