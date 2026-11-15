@@ -10,6 +10,8 @@ try:
     previous = json.loads(manifest.read_text())
 except (OSError, ValueError):
     previous = {}
+if not isinstance(previous, dict):
+    previous = {}
 current = {}
 restored = 0
 for raw in subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0"):
@@ -20,7 +22,7 @@ for raw in subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0"):
         continue
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     old = previous.get(path.as_posix())
-    if old and old[0] == digest:
+    if isinstance(old, list) and len(old) == 2 and old[0] == digest and isinstance(old[1], int):
         os.utime(path, ns=(path.stat().st_atime_ns, old[1]))
         restored += 1
     current[path.as_posix()] = [digest, path.stat().st_mtime_ns]

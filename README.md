@@ -25,8 +25,34 @@ tool, then install on iOS 26 or later. The source bundle identifier is
 `local.cinejoy.glass`; your signing tool may replace it. No Apple signing identity
 or provisioning profile is stored in this project.
 
-The GitHub Actions workflow builds the same device IPA and captures Simulator
-screenshots. Download the `Cinejoy-IPA` artifact from the successful run.
+Pushing to `main` runs the fast device-only path. A manual GitHub Actions run
+also performs Simulator QA. The IPA uploads before Simulator starts, so it can
+be downloaded immediately. The first measured fast run uploaded its IPA in
+86 seconds after the push (59 seconds compiling, 71 seconds building and packaging).
+
+On Windows, download the latest push build directly for Sideloadly:
+
+```powershell
+.\tools\Get-IPA.ps1
+```
+
+This waits only for the IPA artifact, verifies its device architecture and
+resources, and writes `dist/Cinejoy-latest.ipa`. Drop that file into Sideloadly.
+Use `-RunId <id>` to select a specific build. No signing credentials are handled
+by the downloader.
+
+On a persistent Mac, subsequent `bash tools/build.sh` calls reuse DerivedData,
+unchanged source timestamps, generated artwork and the compiled HLS checks.
+Codemagic's IPA workflow retains this cache between runs; GitHub's current
+hosted workflow starts with a fresh Mac. `dist/build-metrics.json` and the build
+log record actual compile and package times.
+
+For parallel native review without changing workflow permissions, dispatch the
+same workflow at a `qa/player*` branch for movie/fullscreen/TV checks, or a
+`qa/interface*` branch for discovery, library, live search and iPad/appearance
+captures. Both branches can point to the exact same app commit. Manual dispatch
+at `main` runs the entire suite. On a Mac, `CINEJOY_QA_FOCUS=player` or
+`CINEJOY_QA_FOCUS=interface` selects the same subsets.
 
 ## Build with Codemagic
 

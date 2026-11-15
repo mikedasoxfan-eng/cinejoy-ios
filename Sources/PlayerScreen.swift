@@ -4,96 +4,444 @@ import WebKit
 import AVKit
 import AVFAudio
 
+// Player structure (why it is shaped this way):
+// - The AVPlayerViewController stays at one structural position for the whole
+//   presentation (portrait, landscape, provider controls). Re-creating it during a
+//   rotation or while AVKit is presenting fullscreen would drop the player.
+// - Playback is stopped only by an explicit close, a replaced presentation, or the
+//   resolver view being dismantled. `onDisappear` alone also fires when AVKit's
+//   own fullscreen controller covers this screen, and used to kill fullscreen video.
+// - High-frequency values (caption clock 10 Hz, elapsed seconds 1 Hz) are read only
+//   by small leaf views, so the screen, its menus and representables do not redraw.
 struct PlayerScreen: View {
     let playback: Playback
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(LibraryStore.self) private var library
     @State private var session = NativePlaybackSession()
     @State private var attempt = 0
+
+    private var landscape: Bool { verticalSizeClass == .compact }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             // A real, laid-out page lets the public website resolve its player.
             // The resolver is not extracted or copied into the app.
-            PlaybackResolverView(playback: playback, session: session)
+            PlaybackResolverView(playback: playback, session: session, parked: session.websiteParked)
                 .id(attempt)
                 .opacity(session.showProviderControls ? 1 : 0.001)
                 .allowsHitTesting(session.showProviderControls)
                 .accessibilityHidden(!session.showProviderControls)
                 .ignoresSafeArea(edges: .bottom)
-            if let player = session.player, !session.showProviderControls {
-                NativeMoviePlayer(player: player)
-                    .overlay(alignment: .bottom) {
-                        NativeCaptionOverlay(clock: session.captionClock, track: session.selectedCaption)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    PlayerStage(session: session, title: playback.title)
+                        .frame(width: geometry.size.width,
+                               height: landscape ? geometry.size.height : min(geometry.size.width * 9 / 16, geometry.size.height))
+                    if !landscape {
+                        PlayerInfoPanel(playback: playback, session: session, close: close)
                     }
-                    .ignoresSafeArea(edges: .bottom)
-            }
-            if session.isLoading && session.error == nil && !session.showProviderControls {
-                VStack(spacing: 14) {
-                    ProgressView().tint(.white).controlSize(.large)
-                    Text("Getting \(playback.title.name) ready…")
-                        .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                 }
-                .padding(24).glassEffect(in: .rect(cornerRadius: 24))
             }
-            if let error = session.error, !session.showProviderControls {
-                Color.black.ignoresSafeArea()
-                VStack(spacing: 18) {
-                    ContentUnavailableView("Playback unavailable", systemImage: "play.slash", description: Text(error))
-                    Button("Try again", systemImage: "arrow.clockwise") {
-                        session.stop()
-                        attempt += 1
-                    }.buttonStyle(.glassProminent).foregroundStyle(.black)
-                    Button("Choose another server", systemImage: "server.rack") { session.openProviderControls() }
-                        .buttonStyle(.glass)
-                }.padding(24)
+            .ignoresSafeArea(edges: landscape ? Edge.Set.vertical : Edge.Set.bottom)
+            .opacity(session.showProviderControls ? 0 : 1)
+            .allowsHitTesting(!session.showProviderControls)
+            .accessibilityHidden(session.showProviderControls)
+            if session.error != nil, !session.showProviderControls {
+                PlayerErrorView(session: session) { retry() }
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(spacing: 10) {
-                Button("Close player", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly).frame(width: 44, height: 44)
-                    .buttonStyle(.glass).buttonBorderShape(.circle)
-                    .accessibilityValue(isTesting ? session.diagnostics : "")
-                Spacer(minLength: 0)
-                Text(playback.title.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    .padding(.horizontal, 16).padding(.vertical, 12).glassEffect()
-                    .accessibilityIdentifier("player-status")
-                    .accessibilityValue("\(session.statusLabel), \(Int(session.seconds)) seconds elapsed")
-                    .accessibilityHint(isTesting ? session.diagnostics : "")
-                Spacer(minLength: 0)
-                Menu("Playback options", systemImage: "ellipsis") {
-                    Picker("Maximum quality", selection: Binding(get: { session.quality }, set: { session.quality = $0 })) {
-                        ForEach(NativeVideoQuality.allCases) { quality in Text(quality.rawValue).tag(quality) }
-                    }
-                    NativeCaptionMenu(tracks: session.captionTracks, selection: Binding(get: { session.selectedCaptionID }, set: { session.selectedCaptionID = $0 }))
-                    Button("Find subtitles", systemImage: "captions.bubble") { session.openProviderControls(subtitles: true) }
-                    if session.showProviderControls, session.player != nil {
-                        Button("Back to video", systemImage: "play.rectangle") { session.returnToNativePlayer() }
-                    } else {
-                        Button("Choose server", systemImage: "server.rack") { session.openProviderControls() }
-                    }
-                }
-                .labelStyle(.iconOnly).frame(width: 44, height: 44)
-                .buttonStyle(.glass).buttonBorderShape(.circle)
-                Button(library.contains(playback.title) ? "Remove from Library" : "Save to Library",
-                       systemImage: library.contains(playback.title) ? "bookmark.fill" : "bookmark") { library.toggle(playback.title) }
-                    .labelStyle(.iconOnly).frame(width: 44, height: 44)
-                    .buttonStyle(.glass).buttonBorderShape(.circle)
+            if !landscape { PlayerTopBar(title: playback.title, episode: playback.episode, session: session, close: close) }
+        }
+        .safeAreaInset(edge: .leading, spacing: 0) {
+            if landscape { PlayerRail(title: playback.title, session: session, close: close) }
+        }
+        .onAppear { connectHistory() }
+        .onDisappear {
+            // Covered by AVKit fullscreen or PiP: keep playing. Only a dismissed or
+            // replaced presentation ends this session.
+            if library.playback?.id != playback.id { finish() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                session.checkpoint(force: true)
+                library.flush()
             }
-            .padding(.horizontal, 16).padding(.vertical, 8)
         }
-        .onChange(of: session.seconds) { _, seconds in
-            library.record(playback.title, path: session.path, seconds: seconds, duration: session.duration)
-        }
-        .onDisappear { session.stop() }
         .preferredColorScheme(.dark)
         .persistentSystemOverlays(.hidden)
+        .statusBarHidden(landscape)
     }
 
-    private var isTesting: Bool { ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" }
+    private func connectHistory() {
+        let title = playback.title
+        session.onProgress = { [weak library] path, seconds, duration, force in
+            library?.record(title, path: path, seconds: seconds, duration: duration, force: force)
+        }
+    }
+
+    private func retry() {
+        session.stop()
+        attempt += 1
+    }
+
+    private func finish() {
+        session.checkpoint(force: true)
+        session.stop()
+    }
+
+    private func close() {
+        finish()
+        dismiss()
+    }
 }
+
+// MARK: - Stage (video, loading)
+
+private struct PlayerStage: View {
+    let session: NativePlaybackSession
+    let title: Title
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let player = session.player {
+                NativeMoviePlayer(player: player, session: session)
+                    .accessibilityLabel(title.name)
+            }
+            if session.isLoading && session.error == nil {
+                PlayerLoadingView(session: session, title: title)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: session.isLoading)
+    }
+}
+
+private struct PlayerLoadingView: View {
+    let session: NativePlaybackSession
+    let title: Title
+
+    var body: some View {
+        ZStack {
+            Artwork(url: title.backdropURL(.wide), maxPixel: 900)
+                .overlay(Color.black.opacity(0.62))
+                .accessibilityHidden(true)
+            VStack(spacing: 10) {
+                ProgressView().controlSize(.large).tint(.white)
+                Text(session.phase.message).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                if session.isSlow {
+                    Text("The server is slow to respond.").font(.footnote).foregroundStyle(.white.opacity(0.75))
+                    Button("Try another server", systemImage: "server.rack") { session.openProviderControls() }
+                        .buttonStyle(.glass).controlSize(.small)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .padding(16)
+            .accessibilityElement(children: .contain)
+        }
+        .clipped()
+    }
+}
+
+private struct PlayerErrorView: View {
+    let session: NativePlaybackSession
+    let retry: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 18) {
+                    ContentUnavailableView("Playback unavailable", systemImage: "play.slash", description: Text(session.error ?? ""))
+                    GlassEffectContainer(spacing: 12) {
+                        VStack(spacing: 12) {
+                            Button("Try again", systemImage: "arrow.clockwise", action: retry)
+                                .buttonStyle(.glassProminent).foregroundStyle(.black).controlSize(.large)
+                            Button("Choose another server", systemImage: "server.rack") { session.openProviderControls() }
+                                .buttonStyle(.glass).controlSize(.large)
+                        }
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+}
+
+// MARK: - Chrome
+
+private struct PlayerCloseButton: View {
+    let session: NativePlaybackSession
+    let close: () -> Void
+    private var isTesting: Bool { ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] == "1" }
+
+    var body: some View {
+        Button("Close player", systemImage: "xmark", action: close)
+            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            .buttonStyle(.glass).buttonBorderShape(.circle)
+            .accessibilityValue(isTesting ? session.diagnostics : "")
+    }
+}
+
+private struct PlayerSaveButton: View {
+    let title: Title
+    @Environment(LibraryStore.self) private var library
+
+    var body: some View {
+        let saved = library.contains(title)
+        Button(saved ? "Remove from Library" : "Save to Library", systemImage: saved ? "bookmark.fill" : "bookmark") { library.toggle(title) }
+            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            .buttonStyle(.glass).buttonBorderShape(.circle)
+            .contentTransition(.symbolEffect(.replace))
+            .sensoryFeedback(.selection, trigger: saved)
+    }
+}
+
+private struct PlayerOptionsMenu: View {
+    let session: NativePlaybackSession
+
+    var body: some View {
+        Menu {
+            Picker("Maximum quality", selection: Binding(get: { session.quality }, set: { session.quality = $0 })) {
+                ForEach(NativeVideoQuality.allCases) { quality in Text(quality.rawValue).tag(quality) }
+            }
+            NativeCaptionMenu(tracks: session.captionTracks, selection: Binding(get: { session.selectedCaptionID }, set: { session.selectedCaptionID = $0 }))
+            Button("Find subtitles", systemImage: "captions.bubble") { session.openProviderControls(subtitles: true) }
+            if session.showProviderControls, session.player != nil {
+                Button("Back to video", systemImage: "play.rectangle") { session.returnToNativePlayer() }
+            } else {
+                Button("Choose server", systemImage: "server.rack") { session.openProviderControls() }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(.circle)
+        }
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Playback options")
+    }
+}
+
+/// Reads the 1 Hz clock in isolation so only this text updates while playing.
+private struct PlayerStatusTitle: View {
+    let title: Title
+    let episode: EpisodeReference?
+    let session: NativePlaybackSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title.name)
+                .font(.headline).lineLimit(1)
+                .accessibilityIdentifier("player-status")
+                .accessibilityValue("\(session.statusLabel), \(Int(session.seconds)) seconds elapsed")
+            Text([episode?.label, session.statusLabel].compactMap { $0 }.joined(separator: " · "))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct PlayerTopBar: View {
+    let title: Title
+    let episode: EpisodeReference?
+    let session: NativePlaybackSession
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PlayerCloseButton(session: session, close: close)
+            PlayerStatusTitle(title: title, episode: episode, session: session)
+            if session.showProviderControls, session.player != nil {
+                Button("Back to video", systemImage: "play.rectangle.fill") { session.returnToNativePlayer() }
+                    .buttonStyle(.glassProminent).foregroundStyle(.black).lineLimit(1)
+            }
+            PlayerOptionsMenu(session: session)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+/// Landscape: controls move to the leading edge, outside the video frame, so the
+/// picture uses the full height and never collides with AVKit's own controls.
+private struct PlayerRail: View {
+    let title: Title
+    let session: NativePlaybackSession
+    let close: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            PlayerCloseButton(session: session, close: close)
+            Spacer(minLength: 0)
+            if session.showProviderControls, session.player != nil {
+                Button("Back to video", systemImage: "play.rectangle.fill") { session.returnToNativePlayer() }
+                    .labelStyle(.iconOnly).frame(width: 44, height: 44)
+                    .buttonStyle(.glassProminent).buttonBorderShape(.circle).foregroundStyle(.black)
+            }
+            PlayerOptionsMenu(session: session)
+            PlayerSaveButton(title: title)
+        }
+        .padding(.vertical, 12).padding(.leading, 4).padding(.trailing, 8)
+        .background(alignment: .center) { PlayerStatusAccessibility(title: title, session: session) }
+    }
+}
+
+/// Landscape keeps the same status element for VoiceOver and UI tests.
+private struct PlayerStatusAccessibility: View {
+    let title: Title
+    let session: NativePlaybackSession
+    var body: some View {
+        Color.clear.frame(width: 1, height: 1)
+            .accessibilityElement()
+            .accessibilityLabel(title.name)
+            .accessibilityValue("\(session.statusLabel), \(Int(session.seconds)) seconds elapsed")
+            .accessibilityAddTraits(.isStaticText)
+            .accessibilityIdentifier("player-status")
+    }
+}
+
+// MARK: - Portrait panel
+
+private struct PlayerInfoPanel: View {
+    let playback: Playback
+    let session: NativePlaybackSession
+    let close: () -> Void
+    @Environment(LibraryStore.self) private var library
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(playback.title.name).font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    Text(metadata).font(.subheadline).foregroundStyle(.secondary)
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { actions }
+                    VStack(alignment: .leading, spacing: 10) { actions }
+                }
+                if let episode = playback.episode {
+                    PlayerUpNext(title: playback.title, current: episode, currentPath: playback.path, ready: !session.isLoading) { next in
+                        session.checkpoint(force: true)
+                        library.play(playback.title, path: next.path)
+                    }
+                } else if !playback.title.overview.isEmpty {
+                    Text(playback.title.overview).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var metadata: String {
+        var parts = [playback.title.year, playback.title.isSeries ? "TV Show" : "Movie"]
+        if let episode = playback.episode { parts.insert(episode.label, at: 0) }
+        if !playback.title.rating.isEmpty { parts.append("★ \(playback.title.rating)") }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    @ViewBuilder private var actions: some View {
+        let saved = library.contains(playback.title)
+        Button { library.toggle(playback.title) } label: {
+            Label(saved ? "Saved" : "Save", systemImage: saved ? "bookmark.fill" : "bookmark")
+        }
+        .accessibilityLabel(saved ? "Remove from Library" : "Save to Library")
+        .buttonStyle(.glass).contentTransition(.symbolEffect(.replace))
+        Menu {
+            NativeCaptionMenu(tracks: session.captionTracks, selection: Binding(get: { session.selectedCaptionID }, set: { session.selectedCaptionID = $0 }))
+            Button("Find subtitles on the server", systemImage: "magnifyingglass") { session.openProviderControls(subtitles: true) }
+        } label: {
+            Label("Subtitles", systemImage: session.selectedCaptionID == nil ? "captions.bubble" : "captions.bubble.fill")
+        }
+        .buttonStyle(.glass)
+        Button("Servers", systemImage: "server.rack") { session.openProviderControls() }
+            .buttonStyle(.glass)
+    }
+}
+
+private struct PlayerUpNext: View {
+    let title: Title
+    let current: EpisodeReference
+    let currentPath: String
+    let ready: Bool
+    let select: (Episode) -> Void
+    @Environment(CatalogStore.self) private var catalog
+    @State private var episodes: [Episode] = []
+    @State private var failed = false
+
+    init(title: Title, current: EpisodeReference, currentPath: String, ready: Bool, select: @escaping (Episode) -> Void) {
+        self.title = title
+        self.current = current
+        self.currentPath = currentPath
+        self.ready = ready
+        self.select = select
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Season \(current.season)").font(.headline).accessibilityAddTraits(.isHeader)
+            if episodes.isEmpty {
+                if failed {
+                    Text("Episodes for this season aren’t available right now.").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(0..<3, id: \.self) { _ in EpisodeRowPlaceholder(compact: true) }
+                }
+            }
+            ForEach(episodes) { episode in
+                let playing = episode.path == currentPath
+                Button { select(episode) } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Artwork(url: .artwork(episode.image, size: .still), maxPixel: 400)
+                            .frame(width: 112, height: 63).clipShape(.rect(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(episode.number). \(episode.name)").font(.subheadline.weight(.semibold)).lineLimit(2)
+                            if playing {
+                                Label("Now playing", systemImage: "speaker.wave.2.fill").font(.caption.weight(.semibold)).foregroundStyle(.tint)
+                            } else if !episode.overview.isEmpty {
+                                Text(episode.overview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(playing)
+                .accessibilityLabel(playing ? "Now playing: episode \(episode.number), \(episode.name)" : "Play episode \(episode.number), \(episode.name)")
+            }
+        }
+        .task(id: ready) { await load() }
+    }
+
+    private func load() async {
+        if let cached = catalog.cachedEpisodes(for: title, season: current.season) {
+            episodes = cached.page.episodes
+            if cached.isFresh(6 * 60 * 60) { return }
+        }
+        // Wait until the video has started: the stream gets the network first.
+        guard ready else { return }
+        do {
+            let page = try await catalog.loadEpisodes(for: title, season: current.season)
+            if !page.episodes.isEmpty { episodes = page.episodes }
+            failed = episodes.isEmpty
+        } catch is CancellationError {
+        } catch {
+            failed = episodes.isEmpty
+        }
+    }
+}
+
+// MARK: - Session
 
 enum NativeVideoQuality: String, CaseIterable, Identifiable {
     case automatic = "Auto", hd = "Up to 720p", fullHD = "Up to 1080p", ultraHD = "Up to 4K"
@@ -117,12 +465,27 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
 }
 
 @MainActor @Observable final class NativePlaybackSession {
+    enum Phase {
+        case resolving, starting, ready
+        var message: String {
+            switch self {
+            case .resolving: return "Finding a stream…"
+            case .starting: return "Starting video…"
+            case .ready: return "Ready"
+            }
+        }
+    }
+
     private(set) var player: AVPlayer?
     private(set) var seconds = 0.0
     private(set) var captionClock = 0.0
     private(set) var duration = 0.0
     private(set) var path = ""
+    private(set) var phase = Phase.resolving
     private(set) var isLoading = true
+    /// Set when startup is taking unusually long, so the UI can offer another server
+    /// instead of looking hung.
+    private(set) var isSlow = false
     private(set) var isPaused = true
     private(set) var isBuffering = false
     private(set) var diagnostics = "Waiting for public player"
@@ -130,24 +493,40 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     var showProviderControls = false
     var quality = NativeVideoQuality.automatic { didSet { applyQuality() } }
     private(set) var captionTracks: [CaptionTrack] = []
-    var selectedCaptionID: String?
+    var selectedCaptionID: String? {
+        didSet {
+            // Captions follow the clock immediately instead of waiting for the next tick.
+            if selectedCaptionID != nil, let time = player?.currentTime().seconds, time.isFinite { captionClock = time }
+        }
+    }
+    @ObservationIgnored var isFullScreen = false
+    @ObservationIgnored var isPictureInPicture = false
+    /// Receives (path, seconds, duration, force). Ticks once per second; the library coalesces.
+    @ObservationIgnored var onProgress: (@MainActor (String, Double, Double, Bool) -> Void)?
     @ObservationIgnored weak var webView: WKWebView?
     @ObservationIgnored private let proxy = NativeHLSProxy()
     @ObservationIgnored private var progressObserver: Any?
     @ObservationIgnored private var itemObserver: NSKeyValueObservation?
     @ObservationIgnored private var timeControlObserver: NSKeyValueObservation?
     @ObservationIgnored private var loadingTimeout: Task<Void, Never>?
+    @ObservationIgnored private var slowTimer: Task<Void, Never>?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var lastMaster: URL?
     @ObservationIgnored private var resumeSeconds = 0.0
     @ObservationIgnored private var lastDiagnosticTick = -1
+    @ObservationIgnored private var startedAt = ContinuousClock.now
+    @ObservationIgnored private var stopped = true
+    private static let audioQueue = DispatchQueue(label: "local.cinejoy.audio-session", qos: .userInitiated)
 
     var statusLabel: String { isLoading ? "Preparing" : isBuffering ? "Buffering" : isPaused ? "Paused" : "Playing" }
     var selectedCaption: CaptionTrack? { captionTracks.first(where: { $0.id == selectedCaptionID }) }
+    /// After AVPlayer is ready the hidden website no longer needs to be composited.
+    var websiteParked: Bool { player != nil && !isLoading && error == nil && !showProviderControls }
 
     func prepare(_ playback: Playback, webView: WKWebView) {
         stop()
+        stopped = false
         self.webView = webView
         path = playback.path
         resumeSeconds = playback.resumeSeconds
@@ -160,20 +539,35 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         error = nil
         showProviderControls = false
         isLoading = true
+        isSlow = false
+        phase = .resolving
+        startedAt = .now
         diagnostics = "Resolving public player"
         loadingTimeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(45))
             guard !Task.isCancelled, let self, self.isLoading else { return }
             self.isLoading = false
             self.error = "The video did not load. Check your connection, or choose another server."
+            let phase = String(describing: self.phase)
+            Perf.log.error("Player startup timed out in phase \(phase, privacy: .public)")
         }
-        let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playback, mode: .moviePlayback)
-        try? audio.setActive(true)
+        slowTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, let self, self.isLoading, self.error == nil else { return }
+            self.isSlow = true
+        }
+        // Activating the audio session is a synchronous IPC; keep it off the main thread.
+        Self.audioQueue.async {
+            let audio = AVAudioSession.sharedInstance()
+            try? audio.setCategory(.playback, mode: .moviePlayback)
+            try? audio.setActive(true)
+        }
     }
 
+    private func elapsedDescription() -> String { (ContinuousClock.now - startedAt).description }
+
     func receiveMaster(_ url: URL) {
-        guard url.scheme == "https", let host = url.host?.lowercased(),
+        guard !stopped, url.scheme == "https", let host = url.host?.lowercased(),
               host == "lightspeed.st" || host.hasSuffix(".lightspeed.st"),
               url.lastPathComponent.lowercased() == "master.m3u8", url != lastMaster else { return }
         lastMaster = url
@@ -181,8 +575,14 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         generation = requestID
         streamTask?.cancel()
         isLoading = true
+        phase = .starting
         error = nil
         diagnostics = "Public HLS master received; preparing native playback"
+        let elapsed = elapsedDescription()
+        Perf.log.info("Player master received after \(elapsed, privacy: .public)")
+        // The stream is known: stop the hidden website from decoding and playing
+        // audio while AVPlayer starts on the same network connection.
+        pauseWebsitePlayer()
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -203,6 +603,8 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         removePlayerObservers()
         player?.pause()
         let item = AVPlayerItem(url: url)
+        // Start on the first listed variant rather than probing; ABR adapts after.
+        item.startsOnFirstEligibleVariant = true
         let native = AVPlayer(playerItem: item)
         native.allowsExternalPlayback = false
         native.usesExternalPlaybackWhileExternalScreenIsActive = false
@@ -211,29 +613,20 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         applyQuality()
         showProviderControls = false
         timeControlObserver = native.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] native, _ in
+            let status = native.timeControlStatus
             Task { @MainActor in
                 guard let self, requestID == self.generation else { return }
-                self.isPaused = native.timeControlStatus == .paused
-                self.isBuffering = native.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                let wasPlaying = !self.isPaused
+                self.isPaused = status == .paused
+                self.isBuffering = status == .waitingToPlayAtSpecifiedRate
+                // A pause is a natural moment to store the exact position.
+                if wasPlaying, status == .paused { self.checkpoint(force: true) }
             }
         }
         progressObserver = native.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] time in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 guard let self, requestID == self.generation else { return }
-                let elapsed = time.seconds
-                let length = item.duration.seconds
-                if length.isFinite, length > 0 { self.duration = length }
-                if elapsed.isFinite, elapsed >= 0 {
-                    self.captionClock = elapsed
-                    // Caption timing follows AVPlayer closely without writing
-                    // history or changing its accessibility value ten times/sec.
-                    if Int(elapsed) != Int(self.seconds) { self.seconds = elapsed }
-                }
-                let tick = Int(Date.timeIntervalSinceReferenceDate)
-                if tick != self.lastDiagnosticTick, item.status != .failed {
-                    self.lastDiagnosticTick = tick
-                    self.diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(self.seconds)) duration=\(Int(self.duration)) external=\(native.isExternalPlaybackActive)"
-                }
+                self.tick(time.seconds, item: item, native: native)
             }
         }
         itemObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
@@ -241,10 +634,16 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
                 guard let self, requestID == self.generation else { return }
                 switch item.status {
                 case .readyToPlay:
+                    guard self.isLoading else { return }
                     self.loadingTimeout?.cancel()
+                    self.slowTimer?.cancel()
                     self.isLoading = false
+                    self.isSlow = false
+                    self.phase = .ready
                     self.error = nil
                     self.pauseWebsitePlayer()
+                    let elapsed = self.elapsedDescription()
+                    Perf.log.info("Player ready after \(elapsed, privacy: .public)")
                     let length = item.duration.seconds
                     if length.isFinite, length > 0 { self.duration = length }
                     let seek = self.resumeSeconds
@@ -259,6 +658,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
                     } else { native.play() }
                 case .failed:
                     self.loadingTimeout?.cancel()
+                    self.slowTimer?.cancel()
                     self.isLoading = false
                     self.error = "This server could not play the video. Choose another server, or try again."
                     let failure = item.error as NSError?
@@ -269,6 +669,38 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         }
     }
 
+    private func tick(_ elapsed: Double, item: AVPlayerItem, native: AVPlayer) {
+        let length = item.duration.seconds
+        if length.isFinite, length > 0, length != duration { duration = length }
+        guard elapsed.isFinite, elapsed >= 0 else { return }
+        // Only the caption layer reads this 10 Hz value, and only while a track is on.
+        if selectedCaptionID != nil { captionClock = elapsed }
+        guard Int(elapsed) != Int(seconds) else { return }
+        seconds = elapsed
+        onProgress?(path, elapsed, duration, false)
+        let second = Int(Date.timeIntervalSinceReferenceDate)
+        if second != lastDiagnosticTick, item.status != .failed {
+            lastDiagnosticTick = second
+            diagnostics = "AVPlayer status=\(item.status.rawValue) control=\(native.timeControlStatus.rawValue) time=\(Int(seconds)) duration=\(Int(duration)) external=\(native.isExternalPlaybackActive) fullscreen=\(isFullScreen) pip=\(isPictureInPicture)"
+        }
+    }
+
+    /// Stores the exact current position (close, pause, background, episode change).
+    func checkpoint(force: Bool) {
+        guard let player else { return }
+        let time = player.currentTime().seconds
+        guard time.isFinite, time > 0, duration > 0 else { return }
+        onProgress?(path, time, duration, force)
+    }
+
+    /// AVKit returns from fullscreen with playback state intact on current systems;
+    /// this only restores it if a transition left a playing video paused.
+    func resumeAfterPresentation(wasPlaying: Bool) {
+        guard wasPlaying, let player, player.currentItem?.status == .readyToPlay,
+              player.timeControlStatus == .paused, !showProviderControls else { return }
+        player.play()
+    }
+
     private func applyQuality() {
         player?.currentItem?.preferredMaximumResolution = quality.maximumResolution
         player?.currentItem?.preferredPeakBitRate = quality.maximumBitRate
@@ -276,6 +708,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
 
     func receiveCaptions(_ body: Any) {
         guard let tracks = CaptionTrack.decodeMessage(body) else { return }
+        guard tracks != captionTracks else { return }
         captionTracks = tracks
         if !tracks.contains(where: { $0.id == selectedCaptionID }) { selectedCaptionID = nil }
     }
@@ -283,6 +716,7 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     func openProviderControls(subtitles: Bool = false) {
         player?.pause()
         showProviderControls = true
+        webView?.isHidden = false
         webView?.evaluateJavaScript("window.__cinejoyNativeTakeover=false;document.querySelectorAll('video').forEach(v=>{v.muted=false})", completionHandler: nil)
         if subtitles {
             webView?.evaluateJavaScript("document.querySelector('button[aria-label=\"Subtitles\"]')?.click()", completionHandler: nil)
@@ -323,11 +757,15 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
     }
 
     func stop() {
+        let wasRunning = !stopped
+        stopped = true
         generation = UUID()
         streamTask?.cancel()
         streamTask = nil
         loadingTimeout?.cancel()
         loadingTimeout = nil
+        slowTimer?.cancel()
+        slowTimer = nil
         removePlayerObservers()
         player?.pause()
         player?.replaceCurrentItem(with: nil)
@@ -336,31 +774,109 @@ enum NativeVideoQuality: String, CaseIterable, Identifiable {
         lastMaster = nil
         isPaused = true
         isBuffering = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        isFullScreen = false
+        isPictureInPicture = false
+        guard wasRunning else { return }
+        Self.audioQueue.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }
 
+// MARK: - AVKit
+
 struct NativeMoviePlayer: UIViewControllerRepresentable {
     let player: AVPlayer
+    let session: NativePlaybackSession
+
+    func makeCoordinator() -> Coordinator { Coordinator(session: session) }
+
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
+        controller.delegate = context.coordinator
         controller.showsPlaybackControls = true
+        controller.videoGravity = .resizeAspect
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.entersFullScreenWhenPlaybackBegins = false
         controller.exitsFullScreenWhenPlaybackEnds = false
+        controller.view.backgroundColor = .black
+        context.coordinator.attachCaptions(to: controller)
         return controller
     }
+
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         if controller.player !== player { controller.player = player }
     }
-    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: ()) { controller.player = nil }
+
+    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
+        coordinator.captionHost?.view.removeFromSuperview()
+        coordinator.captionHost = nil
+        controller.delegate = nil
+        controller.player = nil
+    }
+
+    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        let session: NativePlaybackSession
+        var captionHost: UIHostingController<NativeCaptionLayer>?
+
+        init(session: NativePlaybackSession) { self.session = session }
+
+        /// Captions live in AVKit's content overlay (between the video and its
+        /// controls), so they travel with the video into fullscreen.
+        func attachCaptions(to controller: AVPlayerViewController) {
+            guard let overlay = controller.contentOverlayView else { return }
+            let host = UIHostingController(rootView: NativeCaptionLayer(session: session))
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = false
+            host.safeAreaRegions = []
+            host.view.frame = overlay.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            overlay.addSubview(host.view)
+            captionHost = host
+        }
+
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
+            session.isFullScreen = true
+            Perf.log.info("AVKit fullscreen: begin")
+        }
+
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator) {
+            let wasPlaying = playerViewController.player?.timeControlStatus != .paused
+            let session = self.session
+            coordinator.animate(alongsideTransition: nil) { context in
+                guard !context.isCancelled else { return }
+                MainActor.assumeIsolated {
+                    session.isFullScreen = false
+                    session.resumeAfterPresentation(wasPlaying: wasPlaying)
+                    Perf.log.info("AVKit fullscreen: end, resumed=\(wasPlaying)")
+                }
+            }
+        }
+
+        func playerViewControllerDidStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            session.isPictureInPicture = true
+        }
+
+        func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            session.isPictureInPicture = false
+        }
+
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+            // The inline player is still on screen inside this presentation.
+            completionHandler(true)
+        }
+    }
 }
 
 struct PlaybackResolverView: UIViewRepresentable {
     let playback: Playback
     let session: NativePlaybackSession
+    var parked = false
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -399,7 +915,11 @@ struct PlaybackResolverView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) { context.coordinator.owner = self }
+    func updateUIView(_ view: WKWebView, context: Context) {
+        context.coordinator.owner = self
+        if view.isHidden != parked { view.isHidden = parked }
+    }
+
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "stream")
         view.configuration.userContentController.removeScriptMessageHandler(forName: "watch")
@@ -410,6 +930,7 @@ struct PlaybackResolverView: UIViewRepresentable {
         view.uiDelegate = nil
         if coordinator.owner.session.webView === view {
             coordinator.owner.session.webView = nil
+            coordinator.owner.session.checkpoint(force: true)
             coordinator.owner.session.stop()
         }
     }

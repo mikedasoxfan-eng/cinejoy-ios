@@ -90,6 +90,50 @@ test('native Play starts metadata-only media, resumes progress and respects a la
   assert.equal(messages[0].networkTrace.includes('https://'), false, 'capability diagnostics contain no stream URL');
 });
 
+test('after native takeover the hidden website player stays paused, muted and silent', async () => {
+  let tick;
+  let plays = 0;
+  let pauses = 0;
+  let clicks = 0;
+  const messages = [];
+  const window = { webkit: { messageHandlers: { watch: { postMessage: value => messages.push(value) } } } };
+  const video = {
+    currentTime: 5, duration: 8000, readyState: 4, paused: false, muted: false,
+    currentSrc: 'blob:https://cinejoy.pk/source-a',
+    getAttribute() { return this.currentSrc; }, setAttribute() {},
+    async play() { plays++; this.paused = false; },
+    pause() { pauses++; this.paused = true; },
+  };
+  const source = readFileSync(new URL('../Resources/PlayerIntegration.js', import.meta.url), 'utf8')
+    .replace('__RESUME_SECONDS__', '0');
+  vm.runInNewContext(source, {
+    document: {
+      createElement: () => ({}), head: { append() {} }, addEventListener() {},
+      querySelectorAll: () => [], querySelector: selector => selector === 'video' ? video : { click() { clicks++; } },
+    },
+    location: { pathname: '/watch/movie/27205' }, window,
+    setInterval: fn => { tick = fn; }, HTMLVideoElement: Object, Date: { now: () => Date.now() + messages.length * 2000 },
+  });
+  window.__cinejoyNativeTakeover = true;
+  tick();
+  assert.equal(video.paused, true, 'a playing website element is paused once AVPlayer owns playback');
+  assert.equal(video.muted, true);
+  assert.equal(pauses, 1);
+  assert.equal(plays, 0, 'never autoplays behind the native player');
+  assert.equal(clicks, 0);
+  assert.equal(messages.length, 0, 'no progress traffic from the hidden page');
+  video.currentSrc = 'blob:https://cinejoy.pk/source-b';
+  tick();
+  assert.equal(plays, 0, 'a source change while taken over does not start the website element');
+  // Provider controls hand the page back; the already-owned source is not auto-started.
+  window.__cinejoyNativeTakeover = false;
+  tick();
+  await Promise.resolve();
+  assert.equal(plays, 0, 'returning to provider controls leaves the website paused until the user plays');
+  assert.equal(video.disableRemotePlayback, true);
+  assert.equal(messages.length, 1, 'progress reporting resumes for the visible website player');
+});
+
 test('pending initial playback crosses only a small actual buffered-start gap once per source', () => {
   const script = readFileSync(new URL('../Resources/PlayerIntegration.js', import.meta.url), 'utf8')
     .replace('__RESUME_SECONDS__', '0');

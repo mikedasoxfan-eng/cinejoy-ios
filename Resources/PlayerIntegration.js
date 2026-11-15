@@ -48,7 +48,12 @@
     } catch {}
     return `mse=${+!!env.mse} mms=${+!!env.mms} wkMse=${+!!env.webkitMse} native=${env.nativeHls || '?'} guards=${+!!env.setterGuard}${+!!env.removalGuard} src=${kind} remoteOff=${+!!video.disableRemotePlayback} buffered=${buffer.toFixed(1)} range=${range} visibility=${document.visibilityState || '?'}`;
   };
+  // Once the app's AVPlayer owns playback, the website's element must not
+  // decode, play audio or keep posting progress in the hidden page. Provider
+  // controls clear this flag so the user can operate the site's player again.
+  const nativeOwnsPlayback = () => window.__cinejoyNativeTakeover === true;
   const report = video => {
+    if (nativeOwnsPlayback()) return;
     const seconds=Number.isFinite(video.currentTime)?video.currentTime:0;
     const duration=Number.isFinite(video.duration)?video.duration:0;
     if(!resumed && resumeAt>0 && duration>0 && video.readyState>=1) {
@@ -74,6 +79,15 @@
     if(video){
       video.disableRemotePlayback=true;
       video.setAttribute('x-webkit-airplay','deny');
+      if(nativeOwnsPlayback()){
+        video.muted=true;
+        if(!video.paused)video.pause?.();
+        // Remember the source so returning to provider controls does not
+        // autoplay it a second time behind the user's back.
+        const owned=sourceOf(video);
+        if(owned)started.set(video,owned);
+        return;
+      }
       report(video);
       // A metadata-only preload may never reach HAVE_CURRENT_DATA until play()
       // requests media. Start once per source, preserving later user pauses.

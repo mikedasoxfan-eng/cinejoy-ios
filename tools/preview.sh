@@ -9,8 +9,14 @@ if [ "${GITHUB_EVENT_NAME:-}" = push ] && [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
 fi
 mkdir -p dist/previews
 QA_FOCUS=${CINEJOY_QA_FOCUS:-full}
+if [ -z "${CINEJOY_QA_FOCUS:-}" ]; then
+  case "${GITHUB_REF_NAME:-}" in
+    qa/player*) QA_FOCUS=player ;;
+    qa/interface*) QA_FOCUS=interface ;;
+  esac
+fi
 case "$QA_FOCUS" in
-  full|player) ;;
+  full|player|interface) ;;
   *) echo "Unsupported CINEJOY_QA_FOCUS: $QA_FOCUS" >&2; exit 2 ;;
 esac
 DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); candidates=[x for runtime,devices in d["devices"].items() if "iOS-26" in runtime for x in devices if "iPhone" in x["name"]]; print(candidates[0]["udid"] if candidates else "")')
@@ -28,7 +34,15 @@ TEST_SELECTION=(-only-testing:CinejoyUITests)
 if [ "$QA_FOCUS" = player ]; then
   TEST_SELECTION=(
     -only-testing:CinejoyUITests/CinejoyUITests/testPlaybackHistoryAndNoCasting
+    -only-testing:CinejoyUITests/CinejoyUITests/testAVKitFullscreenRoundTripKeepsPlayback
     -only-testing:CinejoyUITests/CinejoyUITests/testTVSeasonSelection
+  )
+elif [ "$QA_FOCUS" = interface ]; then
+  TEST_SELECTION=(
+    -only-testing:CinejoyUITests/CinejoyUITests/testHomeScreenCapture
+    -only-testing:CinejoyUITests/CinejoyUITests/testNativeBrowsingAndLocalLibrary
+    -only-testing:CinejoyUITests/CinejoyUITests/testSearchEmptyStateAndLiveResults
+    -only-testing:CinejoyUITests/CinejoyUITests/testSettingsAppearance
   )
 fi
 TEST_RESULT=0

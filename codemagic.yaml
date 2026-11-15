@@ -8,6 +8,7 @@ workflows:
         - $CM_BUILD_DIR/build
         - $CM_BUILD_DIR/Cinejoy.xcodeproj
         - $HOME/.xcodegen/cache
+        - $HOME/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
     environment:
       xcode: "26.6"
       node: lts

@@ -19,6 +19,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(CatalogStore.self) private var catalog
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var library = library
@@ -37,13 +38,15 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .modifier(ResumeBarModifier(entry: library.history.first(where: { $0.fraction < 0.95 })))
+        .modifier(ResumeBarModifier())
         .sheet(isPresented: $library.showSettings) { SettingsScreen() }
         .fullScreenCover(item: $library.playback) { playback in
             PlayerScreen(playback: playback)
+                .id(playback.id)
         }
         .background {
-            ReaderHost(reader: catalog.reader)
+            // Hidden catalog readers (DOM only; images, media and fonts are blocked).
+            ReaderHost(readers: catalog.readers)
                 .frame(width: 430, height: 932)
                 .opacity(0.001)
                 .allowsHitTesting(false)
@@ -52,12 +55,19 @@ struct RootView: View {
         .task {
             if ProcessInfo.processInfo.environment["CINEJOY_UI_TESTS"] != "1" { await catalog.refresh() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { library.flush() }
+        }
     }
 }
 
+/// Reads history itself so a progress checkpoint only re-evaluates the accessory,
+/// not the tab hierarchy (and the player cover) beneath RootView.
 struct ResumeBarModifier: ViewModifier {
-    let entry: WatchEntry?
+    @Environment(LibraryStore.self) private var library
+
     @ViewBuilder func body(content: Content) -> some View {
+        let entry = library.history.first(where: { $0.fraction < 0.95 })
         if #available(iOS 26.2, *) {
             content.tabViewBottomAccessory(isEnabled: entry != nil) {
                 if let entry { ResumeAccessory(entry: entry) }
@@ -76,6 +86,7 @@ struct CineNavigation<Content: View>: View {
         NavigationStack {
             content
                 .navigationDestination(for: Title.self) { TitleDetailScreen(title: $0) }
+                .navigationDestination(for: Shelf.self) { ShelfScreen(shelf: $0) }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Settings", systemImage: "slider.horizontal.3") { library.showSettings = true }
@@ -92,16 +103,16 @@ struct ResumeAccessory: View {
     var body: some View {
         Button { library.play(entry.title, path: entry.path) } label: {
             HStack(spacing: 12) {
-                Artwork(url: entry.title.imageURL)
-                    .frame(width: 32, height: 40).clipShape(.rect(cornerRadius: 6))
+                Artwork(url: entry.title.posterURL(.thumbnail), maxPixel: 160)
+                    .frame(width: 30, height: 44).clipShape(.rect(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(entry.remaining).font(.caption).foregroundStyle(.secondary)
+                    Text(entry.remaining).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "play.fill").font(.title3).frame(width: 44, height: 44)
             }
-            .padding(.horizontal, 16).padding(.vertical, 6)
+            .padding(.horizontal, 16).padding(.vertical, 4)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

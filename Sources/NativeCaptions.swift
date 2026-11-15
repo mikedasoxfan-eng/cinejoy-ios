@@ -85,23 +85,48 @@ struct CaptionTrack: Decodable, Identifiable, Equatable {
 struct NativeCaptionOverlay: View {
     let clock: Double
     let track: CaptionTrack?
+    var font: Font = .title3.weight(.semibold)
+    var bottomInset: CGFloat = 64
 
     var body: some View {
         VStack {
             Spacer()
             if let text = track?.text(at: clock) {
                 Text(verbatim: text)
-                    .font(.title3.weight(.semibold))
+                    .font(font)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.black.opacity(0.78), in: .rect(cornerRadius: 8))
-                    .padding(.horizontal, 24).padding(.bottom, 64)
+                    .padding(.horizontal, 24).padding(.bottom, bottomInset)
                     .accessibilityIdentifier("native-caption-text")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+    }
+}
+
+/// Hosted inside AVPlayerViewController.contentOverlayView, so captions follow the
+/// video into AVKit fullscreen. Text scales with the picture width and Dynamic Type.
+/// This is the only view that reads the 10 Hz caption clock.
+struct NativeCaptionLayer: View {
+    let session: NativePlaybackSession
+    @ScaledMetric(relativeTo: .body) private var baseSize: CGFloat = 16
+
+    init(session: NativePlaybackSession) { self.session = session }
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let track = session.selectedCaption {
+                let scale = min(max(geometry.size.width / 393, 1), 1.7)
+                NativeCaptionOverlay(clock: session.captionClock, track: track,
+                                     font: .system(size: baseSize * scale, weight: .semibold),
+                                     bottomInset: max(20, geometry.size.height * 0.12))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(session.selectedCaption == nil)
     }
 }
 

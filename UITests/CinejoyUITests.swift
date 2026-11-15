@@ -137,6 +137,76 @@ final class CinejoyUITests: XCTestCase {
         capture("10b-tv-episode-player", app)
         XCTAssertTrue(playing, "The selected Season 2 episode really plays")
         XCTAssertFalse(app.webViews.buttons["Cast to Device"].exists)
+        // The portrait player lists the season from the episode cache the detail screen filled.
+        XCTAssertTrue(app.buttons["Now playing: episode 1, Seven Thirty-Seven"].waitForExistence(timeout: 10),
+                      "Up next shows the current season with the playing episode marked")
+    }
+
+    /// AVKit's own fullscreen must keep the same AVPlayer: time keeps advancing through
+    /// enter, rotation and exit, and the inline player is still usable afterwards.
+    @MainActor func testAVKitFullscreenRoundTripKeepsPlayback() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launch()
+        app.tabBars.buttons["Search"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap(); field.typeText("Inception")
+        let title = app.buttons["title-movie:27205"]
+        XCTAssertTrue(title.waitForExistence(timeout: 8)); title.tap()
+        let play = app.buttons["play-title"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5)); play.tap()
+        let close = app.buttons["Close player"]
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            if close.exists, close.isHittable { close.tap() }
+        }
+        let status = app.staticTexts["player-status"]
+        let advancing = NSPredicate(format: "value MATCHES %@", "Playing, ([3-9]|[1-9][0-9]+) seconds elapsed")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: advancing, object: status)], timeout: 60), .completed,
+                       "Inline playback starts before fullscreen is attempted")
+        let before = elapsed(status)
+
+        // Reveal AVKit's inline controls, then use its own fullscreen control.
+        let stage = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        let enter = app.buttons.matching(NSPredicate(format: "label ==[c] 'Full Screen' OR label ==[c] 'Enter Full Screen' OR identifier ==[c] 'Full Screen'")).firstMatch
+        for _ in 0..<3 {
+            if enter.exists && enter.isHittable { break }
+            stage.tap()
+            _ = enter.waitForExistence(timeout: 2)
+        }
+        guard enter.exists, enter.isHittable else {
+            capture("16-fullscreen-control-missing", app)
+            XCTFail("AVKit's fullscreen control must be available; see the attached screenshot and accessibility hierarchy.")
+            return
+        }
+        enter.tap()
+        sleep(3)
+        XCTAssertFalse(close.exists && close.isHittable, "AVKit fullscreen covers the app chrome")
+        capture("16-avkit-fullscreen", app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(4)
+        capture("16b-avkit-fullscreen-landscape", app)
+        XCUIDevice.shared.orientation = .portrait
+        sleep(2)
+
+        // Leave fullscreen with AVKit's control, or its swipe-down gesture.
+        let exitLabels = NSPredicate(format: "label ==[c] 'Exit Full Screen' OR label ==[c] 'Done' OR label ==[c] 'Close' OR label ==[c] 'Minimize'")
+        let exit = app.buttons.matching(exitLabels).firstMatch
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        if exit.waitForExistence(timeout: 3), exit.isHittable { exit.tap() } else { app.swipeDown() }
+        XCTAssertTrue(close.waitForExistence(timeout: 8))
+        let hittable = NSPredicate(format: "hittable == true")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 8), .completed,
+                       "The inline player and its close control return after fullscreen")
+        let progressed = NSPredicate(format: "value BEGINSWITH 'Playing, '")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: progressed, object: status)], timeout: 15), .completed,
+                       "Playback is still running after leaving fullscreen")
+        XCTAssertGreaterThanOrEqual(elapsed(status), before + 5, "The same AVPlayer kept its time through fullscreen (no restart from zero)")
+        let diagnostics = close.value as? String ?? ""
+        XCTAssertTrue(diagnostics.contains("external=false"), "External playback stays disabled: \(diagnostics)")
+        capture("16c-after-fullscreen", app)
     }
 
     @MainActor func testSettingsAppearance() throws {
@@ -168,7 +238,8 @@ final class CinejoyUITests: XCTestCase {
         field.tap(); field.typeText("Inception")
         let title = app.buttons["title-movie:27205"]
         XCTAssertTrue(title.waitForExistence(timeout: 8)); title.tap()
-        let play = app.buttons["Play"].firstMatch
+        // The detail button reads "Play" or "Resume…" depending on local history.
+        let play = app.buttons["play-title"]
         XCTAssertTrue(play.waitForExistence(timeout: 5)); play.tap()
         XCTAssertTrue(app.buttons["Close player"].waitForExistence(timeout: 8))
         defer { if app.buttons["Close player"].exists { app.buttons["Close player"].tap() } }
@@ -231,6 +302,12 @@ final class CinejoyUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        if name.hasPrefix("16") {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "\(name)-accessibility"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
         if name.hasPrefix("11-") || name == "10b-tv-episode-player" {
             let diagnostics = app.buttons["Close player"].value as? String ?? "No media diagnostics"
             print("Cinejoy media state: \(diagnostics)")

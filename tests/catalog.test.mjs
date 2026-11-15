@@ -27,6 +27,20 @@ test('real captured home produces named shelves and deduplicated movie/TV titles
   }
 });
 
+test('featured titles keep the real wide artwork the page shows; posters are never reused as backdrops', () => {
+  const html = gunzipSync(readFileSync(new URL('fixtures/home.html.gz', import.meta.url))).toString('utf8');
+  const page = extract(html);
+  const odyssey = page.titles.find(x => x.tmdbID === 1368337);
+  assert.ok(odyssey, 'The Odyssey is on the captured home page');
+  assert.equal(odyssey.backdrop, 'https://image.tmdb.org/t/p/w1280/twiVn9oFXOVR0uoYgawyEBlnFu8.jpg');
+  for (const title of page.titles) {
+    const file = url => url.split('/').at(-1);
+    if (file(title.backdrop) !== file(title.poster)) assert.match(title.backdrop, /\/t\/p\/(w780|w1280|original)\//);
+  }
+  const synthetic = extract('<html><body><a href="/movie/1-x"><img src="https://image.tmdb.org/t/p/w500/p.jpg" alt="X"><h3>X</h3></a><img alt="X" src="https://image.tmdb.org/t/p/w1280/p.jpg"></body></html>');
+  assert.equal(synthetic.titles[0].backdrop, 'https://image.tmdb.org/t/p/w780/p.jpg', 'the same file at a larger size is not treated as wide art');
+});
+
 test('movie detail recommendations do not become TV episodes', () => {
   const html = gunzipSync(readFileSync(new URL('fixtures/movie.html.gz', import.meta.url))).toString('utf8');
   const page = extract(html, '/movie/27205-inception-2010');

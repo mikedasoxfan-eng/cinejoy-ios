@@ -1,6 +1,14 @@
 (() => {
   const absolute = value => { try { return new URL(value, location.origin).href; } catch { return ''; } };
   const artwork = img => absolute(img?.currentSrc || img?.src || img?.getAttribute('data-src') || '');
+  // Wide artwork the page itself shows for a named title (hero banners use a
+  // w780/w1280 backdrop with the title as alt text). Posters are never reused.
+  const backdrops = new Map();
+  for (const img of document.querySelectorAll('img[alt]')) {
+    const alt = img.getAttribute('alt')?.trim();
+    const src = artwork(img);
+    if (alt && !backdrops.has(alt) && /\/t\/p\/(?:w780|w1280|original)\//.test(src)) backdrops.set(alt, src);
+  }
   const titleFrom = a => {
     const match = (a.getAttribute('href') || '').match(/^\/(movie|series)\/(\d+)(?:-|$)/);
     if (!match) return null;
@@ -11,7 +19,10 @@
     const year = text.match(/\b(19|20)\d{2}\b/)?.[0] || '';
     const rating = text.match(/\b\d\.\d\b/)?.[0] || '';
     const poster = artwork(a.querySelector('img'));
-    return {tmdbID:Number(match[2]),kind:match[1]==='series'?'tv':'movie',name,year,poster,backdrop:poster.replace(/\/t\/p\/[^/]+\//,'/t/p/w780/'),overview:a.querySelector('p')?.textContent?.trim()||'',rating,path:a.getAttribute('href')};
+    const file = url => url.split('/').at(-1);
+    const wide = backdrops.get(name);
+    const backdrop = wide && file(wide) !== file(poster) ? wide : poster.replace(/\/t\/p\/[^/]+\//,'/t/p/w780/');
+    return {tmdbID:Number(match[2]),kind:match[1]==='series'?'tv':'movie',name,year,poster,backdrop,overview:a.querySelector('p')?.textContent?.trim()||'',rating,path:a.getAttribute('href')};
   };
   const collect = node => {
     const seen = new Set();
