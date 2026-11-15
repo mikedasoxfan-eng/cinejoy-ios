@@ -19,16 +19,16 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not read build artifacts.' }
         $artifact = $data.artifacts | Where-Object { $_.name -eq 'Cinejoy-IPA' -and !$_.expired } | Select-Object -First 1
         if ($artifact) {
-            $downloadDir = Join-Path $repoRoot "dist/downloads/$RunId"
+            $downloadDir = Join-Path $repoRoot "dist/downloads/$RunId/$([guid]::NewGuid())"
             New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
             gh run download $RunId --repo $repo --name Cinejoy-IPA --dir $downloadDir
             if ($LASTEXITCODE -ne 0) { throw 'IPA download failed.' }
             $ipa = Join-Path $downloadDir 'Cinejoy-unsigned.ipa'
             if (!(Test-Path -LiteralPath $ipa)) { throw 'The artifact did not contain an IPA.' }
             $destination = Join-Path $repoRoot 'dist/Cinejoy-latest.ipa'
-            Copy-Item -LiteralPath $ipa -Destination $destination -Force
-            python tools/verify_ipa.py $destination
+            python tools/verify_ipa.py $ipa
             if ($LASTEXITCODE -ne 0) { throw 'IPA verification failed.' }
+            Copy-Item -LiteralPath $ipa -Destination $destination -Force
             Write-Host "Ready for Sideloadly: $destination"
             Get-FileHash -LiteralPath $destination -Algorithm SHA256
             return
