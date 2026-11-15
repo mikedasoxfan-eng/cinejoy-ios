@@ -169,13 +169,14 @@ struct SettingsScreen: View {
                 Section("Appearance") {
                     Picker("Theme", selection: $appearance) {
                         Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
-                    }
+                    }.accessibilityIdentifier("appearance-picker")
                 }
                 Section {
                     Label("Saved on this device", systemImage: "iphone")
                     Text("Your library and watch history stay here. There is no account to create.").foregroundStyle(.secondary)
                     Button("Clear watch history", role: .destructive) { confirmClear = true }
                         .disabled(library.history.isEmpty)
+                        .accessibilityIdentifier("clear-history")
                 } header: { Text("Your Library") }
                 Section("About") {
                     LabeledContent("Cinejoy", value: "1.0")

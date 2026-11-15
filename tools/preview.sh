@@ -12,14 +12,18 @@ xcrun simctl bootstatus "$DEVICE_ID" -b
 xcrun simctl install "$DEVICE_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
 xcrun simctl status_bar "$DEVICE_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl ui "$DEVICE_ID" appearance dark
-xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass
+SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance dark
 sleep 12
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-dark.png
 xcrun simctl ui "$DEVICE_ID" appearance light
-sleep 2
+xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass
+SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance light
+sleep 5
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-light.png
 xcrun simctl ui "$DEVICE_ID" content_size accessibility-large
-sleep 2
+xcrun simctl terminate "$DEVICE_ID" local.cinejoy.glass
+SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$DEVICE_ID" local.cinejoy.glass -appearance light
+sleep 5
 xcrun simctl io "$DEVICE_ID" screenshot dist/previews/home-accessibility.png
 xcrun simctl ui "$DEVICE_ID" content_size large
 xcrun simctl ui "$DEVICE_ID" appearance dark
@@ -38,7 +42,7 @@ if [ -n "$IPAD_ID" ]; then
   xcrun simctl bootstatus "$IPAD_ID" -b
   xcrun simctl install "$IPAD_ID" build/Build/Products/Debug-iphonesimulator/Cinejoy.app
   xcrun simctl ui "$IPAD_ID" appearance dark
-  xcrun simctl launch "$IPAD_ID" local.cinejoy.glass
+  SIMCTL_CHILD_CINEJOY_UI_TESTS=1 xcrun simctl launch "$IPAD_ID" local.cinejoy.glass -appearance dark
   sleep 10
   xcrun simctl io "$IPAD_ID" screenshot dist/previews/ipad-home-dark.png
 fi

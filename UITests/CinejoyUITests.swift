@@ -85,6 +85,30 @@ final class CinejoyUITests: XCTestCase {
         capture("10-season-two", app)
     }
 
+    @MainActor func testSettingsAppearanceAndHistoryDeletion() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
+        app.launch()
+        app.buttons["Settings"].firstMatch.tap()
+        let theme = app.buttons["appearance-picker"]
+        XCTAssertTrue(theme.waitForExistence(timeout: 5)); theme.tap()
+        app.buttons["Dark"].tap()
+        capture("13-settings-dark", app)
+        theme.tap(); app.buttons["Light"].tap()
+        capture("14-settings-light", app)
+        let clear = app.buttons["clear-history"]
+        if clear.isEnabled {
+            clear.tap()
+            let confirm = app.buttons["Clear history"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        }
+        app.buttons["Done"].tap()
+        app.tabBars.buttons["Library"].tap()
+        app.segmentedControls.buttons["History"].tap()
+        XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
+        capture("15-history-empty", app)
+    }
+
     @MainActor func testPlaybackHistoryAndNoCasting() throws {
         let app = XCUIApplication()
         app.launchEnvironment["CINEJOY_UI_TESTS"] = "1"
